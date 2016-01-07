@@ -26,4 +26,8 @@ include $(top_srcdir)/include/mk/env_pre.mk
 
 LDLIBS			+= $(ACL_LIBS)
 
+ifeq ($(LIBC),musl)
+FILTER_OUT_MAKE_TARGETS	:= acl1
+endif
+
 include $(top_srcdir)/include/mk/generic_leaf_target.mk

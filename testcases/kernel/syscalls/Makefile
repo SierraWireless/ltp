@@ -29,6 +29,12 @@ FILTER_OUT_DIRS	+= capget capset chmod chown clone fork getcontext llseek \
 		   mincore mprotect nftw profil remap_file_pages sbrk
 endif
 
+ifeq ($(LIBC),musl)
+FILTER_OUT_DIRS	+= confstr fmtmsg getcontext ioctl mallopt profil \
+		   rt_sigsuspend setdomainname sethostname sigsuspend \
+		   ustat
+endif
+
 ifeq ($(UCLIBC),1)
 FILTER_OUT_DIRS	+= profil
 endif

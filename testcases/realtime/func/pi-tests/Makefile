@@ -27,5 +27,9 @@ include $(top_srcdir)/include/mk/env_pre.mk
 include $(abs_srcdir)/../../config.mk
 
 MAKE_TARGETS		:= testpi-0 testpi-1 testpi-2 testpi-4 testpi-5 testpi-6 testpi-7 sbrk_mutex
+ifeq ($(LIBC),musl)
+FILTER_OUT_MAKE_TARGETS	:= testpi-5 testpi-6 sbrk_mutex
+endif
+
 
 include $(top_srcdir)/include/mk/generic_leaf_target.mk
