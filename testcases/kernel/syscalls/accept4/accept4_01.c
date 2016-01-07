@@ -64,6 +64,7 @@ static void cleanup(void)
 	tst_rmdir();
 }
 
+#if defined(__GLIBC__) && defined(__GLIBC_PREREQ)
 #if !(__GLIBC_PREREQ(2, 10))
 static int
 accept4_01(int fd, struct sockaddr *sockaddr, socklen_t *addrlen, int flags)
@@ -82,7 +83,6 @@ accept4_01(int fd, struct sockaddr *sockaddr, socklen_t *addrlen, int flags)
 	}
 	tst_resm(TINFO, "\n");
 #endif
-
 #if USE_SOCKETCALL
 	long args[6];
 
@@ -96,6 +96,7 @@ accept4_01(int fd, struct sockaddr *sockaddr, socklen_t *addrlen, int flags)
 	return ltp_syscall(__NR_accept4, fd, sockaddr, addrlen, flags);
 #endif
 }
+#endif
 #endif
 
 static void
@@ -119,9 +120,15 @@ do_test(int lfd, struct sockaddr_in *conn_addr,
 		die("Connect Error");
 
 	addrlen = sizeof(struct sockaddr_in);
+#if defined(__GLIBC__) && defined(__GLIBC_PREREQ)
 #if !(__GLIBC_PREREQ(2, 10))
 	acceptfd = accept4_01(lfd, (struct sockaddr *)&claddr, &addrlen,
 			      closeonexec_flag | nonblock_flag);
+
+#else
+	acceptfd = accept4(lfd, (struct sockaddr *)&claddr, &addrlen,
+			   closeonexec_flag | nonblock_flag);
+#endif
 #else
 	acceptfd = accept4(lfd, (struct sockaddr *)&claddr, &addrlen,
 			   closeonexec_flag | nonblock_flag);

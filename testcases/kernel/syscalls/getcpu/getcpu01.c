@@ -62,6 +62,7 @@
 #include <dirent.h>
 
 #if defined(__i386__) || defined(__x86_64__)
+#if defined(__GLIBC__)
 #if __GLIBC_PREREQ(2,6)
 #if defined(__x86_64__)
 #include <utmpx.h>
@@ -75,8 +76,15 @@ int sys_support = 0;
 #else
 int sys_support = 0;
 #endif
+#else
+int sys_support = 0;
+#endif
 
+#if defined(__GLIBC__)
 #if !(__GLIBC_PREREQ(2, 7))
+#define CPU_FREE(ptr) free(ptr)
+#endif
+#else
 #define CPU_FREE(ptr) free(ptr)
 #endif
 
@@ -164,7 +172,11 @@ static inline int getcpu(unsigned *cpu_id, unsigned *node_id,
 {
 #if defined(__i386__)
 	return syscall(318, cpu_id, node_id, cache_struct);
-#elif __GLIBC_PREREQ(2,6)
+#elif defined(__GLIBC__)
+#if __GLIBC_PREREQ(2,6)
+	*cpu_id = sched_getcpu();
+#endif
+#else
 	*cpu_id = sched_getcpu();
 #endif
 	return 0;
@@ -191,15 +203,20 @@ unsigned int set_cpu_affinity(void)
 	cpu_set_t *set;
 	size_t size;
 	int nrcpus = 1024;
+#if defined(__GLIBC__) && defined(__GLIBC_PREREQ)
 #if __GLIBC_PREREQ(2, 7)
 realloc:
 	set = CPU_ALLOC(nrcpus);
 #else
 	set = malloc(sizeof(cpu_set_t));
 #endif
+#else
+	set = malloc(sizeof(cpu_set_t));
+#endif
 	if (set == NULL) {
 		tst_brkm(TFAIL, NULL, "CPU_ALLOC:errno:%d", errno);
 	}
+#if defined(__GLIBC__) && defined(__GLIBC_PREREQ)
 #if __GLIBC_PREREQ(2, 7)
 	size = CPU_ALLOC_SIZE(nrcpus);
 	CPU_ZERO_S(size, set);
@@ -207,8 +224,13 @@ realloc:
 	size = sizeof(cpu_set_t);
 	CPU_ZERO(set);
 #endif
+#else
+	size = sizeof(cpu_set_t);
+	CPU_ZERO(set);
+#endif
 	if (sched_getaffinity(0, size, set) < 0) {
 		CPU_FREE(set);
+#if defined(__GLIBC__) && defined(__GLIBC_PREREQ)
 #if __GLIBC_PREREQ(2, 7)
 		if (errno == EINVAL && nrcpus < (1024 << 8)) {
 			nrcpus = nrcpus << 2;
@@ -220,13 +242,24 @@ realloc:
 				 "NR_CPUS of the kernel is more than 1024, so we'd better use a newer glibc(>= 2.7)");
 		else
 #endif
+#else
+		if (errno == EINVAL)
+			tst_resm(TFAIL,
+				 "NR_CPUS of the kernel is more than 1024, so we'd better use a newer glibc(>= 2.7)");
+		else
+#endif
 			tst_resm(TFAIL, "sched_getaffinity:errno:%d", errno);
 		tst_exit();
 	}
 	cpu_max = max_cpuid(size, set);
+#if defined(__GLIBC__) && defined(__GLIBC_PREREQ)
 #if __GLIBC_PREREQ(2, 7)
 	CPU_ZERO_S(size, set);
 	CPU_SET_S(cpu_max, size, set);
+#else
+	CPU_ZERO(set);
+	CPU_SET(cpu_max, set);
+#endif
 #else
 	CPU_ZERO(set);
 	CPU_SET(cpu_max, set);
@@ -247,8 +280,12 @@ unsigned int max_cpuid(size_t size, cpu_set_t * set)
 {
 	unsigned int index, max = 0;
 	for (index = 0; index < size * BITS_PER_BYTE; index++)
+#if defined(__GLIBC__) && defined(__GLIBC_PREREQ)
 #if __GLIBC_PREREQ(2, 7)
 		if (CPU_ISSET_S(index, size, set))
+#else
+		if (CPU_ISSET(index, set))
+#endif
 #else
 		if (CPU_ISSET(index, set))
 #endif
