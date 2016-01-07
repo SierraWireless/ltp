@@ -42,6 +42,9 @@ MAKE_DEPS		:= $(LIBCONTROLLERS) $(LIBCPUSET)
 LDFLAGS			+= -L$(abs_builddir)/$(LIBCPUSET_DIR) -L$(abs_builddir)/$(LIBCONTROLLERS_DIR)
 
 LDLIBS			+= -lcpu_set -lcontrollers -lltp
+ifeq ($(LIBC),musl)
+LDLIBS			+= -lfts
+endif
 
 INSTALL_TARGETS		?= *.sh
 

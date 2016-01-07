@@ -36,6 +36,9 @@ MAKE_DEPS		:= $(LIB)
 CPPFLAGS		+= -I$(abs_srcdir)/../$(LIBDIR)
 
 LDFLAGS			+= -L$(abs_builddir)/../$(LIBDIR)
+ifeq ($(LIBC),musl)
+LDLIBS			+= -lfts
+endif
 
 INSTALL_TARGETS		?= *.sh
 
