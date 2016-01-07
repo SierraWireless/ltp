@@ -24,7 +24,13 @@ dnl ----------------------------
 dnl
 AC_DEFUN([LTP_CHECK_SYSCALL_NUMA],
 [dnl
-AC_CHECK_HEADERS([linux/mempolicy.h numa.h numaif.h],[
+AC_MSG_CHECKING([for numa])
+AC_ARG_WITH(
+	[numa],
+	AC_HELP_STRING([--without-numa],
+	[without numa support]),
+	[],
+	[AC_CHECK_HEADERS([linux/mempolicy.h numa.h numaif.h],[
 	LTP_SYSCALL_NUMA_HEADERS=yes
 	AC_CHECK_LIB(numa,numa_alloc_onnode,[have_numa_alloc_onnode="yes"])
 	if  test "x$have_numa_alloc_onnode" = "xyes"; then
@@ -48,3 +54,5 @@ if test "x$have_mpol_constants" = "xyes"; then
 	AC_DEFINE(HAVE_MPOL_CONSTANTS,1,[define to 1 if you have all constants required to use mbind tests])
 fi
 )])
+AC_MSG_RESULT([$with_numa])
+])
