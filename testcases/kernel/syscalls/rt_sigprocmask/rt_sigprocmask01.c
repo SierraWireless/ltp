@@ -39,6 +39,7 @@
 /*		    sigsetsize should indicate the size of a sigset_t type.   */
 /******************************************************************************/
 
+#define _GNU_SOURCE
 #include <stdio.h>
 #include <signal.h>
 #include <errno.h>
