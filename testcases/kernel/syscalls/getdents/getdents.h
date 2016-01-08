@@ -34,12 +34,13 @@ struct linux_dirent {
 	char            d_name[];
 };
 
+#ifdef __GLIBC__
 static inline int
 getdents(unsigned int fd, struct linux_dirent *dirp, unsigned int size)
 {
 	return ltp_syscall(__NR_getdents, fd, dirp, size);
 }
-
+#endif
 struct linux_dirent64 {
 	uint64_t	d_ino;
 	int64_t		d_off;
@@ -48,10 +49,11 @@ struct linux_dirent64 {
 	char		d_name[];
 };
 
+#ifdef __GLIBC__
 static inline int
 getdents64(unsigned int fd, struct linux_dirent64 *dirp64, unsigned int size)
 {
 	return ltp_syscall(__NR_getdents64, fd, dirp64, size);
 }
-
+#endif
 #endif /* GETDENTS_H */
