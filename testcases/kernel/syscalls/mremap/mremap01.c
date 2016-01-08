@@ -76,10 +76,12 @@
  */
 #include <unistd.h>
 #include <errno.h>
+#include <fcntl.h>
+#define _GNU_SOURCE
 #define __USE_GNU
 #include <sys/mman.h>
 #undef __USE_GNU
-#include <fcntl.h>
+#undef _GNU_SOURCE
 
 #include "test.h"
 
