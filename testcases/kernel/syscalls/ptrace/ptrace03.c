@@ -102,7 +102,11 @@ static pid_t unused_pid;
 static pid_t zero_pid;
 
 struct test_case_t {
+#ifdef __GLIBC__
 	enum __ptrace_request request;
+#else
+	int request;
+#endif
 	pid_t *pid;
 	int exp_errno;
 } test_cases[] = {

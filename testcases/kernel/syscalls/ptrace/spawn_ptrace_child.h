@@ -130,7 +130,11 @@ static char *strings[] = {
 	SPT(KILL)
 	SPT(SINGLESTEP)
 };
+#ifdef __GLIBC__
 static inline char *strptrace(enum __ptrace_request request)
+#else
+static inline char *strptrace(int request)
+#endif
 {
 	return strings[request];
 }
