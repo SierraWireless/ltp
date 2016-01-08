@@ -49,7 +49,7 @@ stress test at the same time you run other tests, like a multi-user
 benchmark.
 
 */
-
+#define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
