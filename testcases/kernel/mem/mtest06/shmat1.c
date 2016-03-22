@@ -111,7 +111,7 @@ int done_shmat = 0;		/* disallow read and writes before shmat      */
 static void sig_handler(int signal,	/* signal number, set to handle SIGALRM       */
 			int code, struct ucontext *ut)
 {				/* contains pointer to sigcontext structure   */
-#ifdef __i386__
+#if defined(__i386__) && defined(__USE_GNU)
 	unsigned long except;	/* exception type.                            */
 	int ret = 0;		/* exit code from signal handler.             */
 	struct sigcontext *scp =	/* pointer to sigcontext structure            */
@@ -122,7 +122,7 @@ static void sig_handler(int signal,	/* signal number, set to handle SIGALRM     
 		fprintf(stdout, "Test ended, success\n");
 		exit(0);
 	}
-#ifdef __i386__
+#if defined(__i386__) && defined(__USE_GNU)
 	else {
 		except = scp->trapno;
 		fprintf(stderr, "signal caught - [%d] ", signal);
