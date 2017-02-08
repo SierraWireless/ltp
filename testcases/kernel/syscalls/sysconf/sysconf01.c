@@ -103,7 +103,9 @@ int main(void)
 	test_sysconf(_SC_2_C_BIND);
 	test_sysconf(_SC_2_C_DEV);
 #ifdef _SC_2_C_VERSION
+#ifdef __GLIBC__
 	test_sysconf(_SC_2_C_VERSION);
+#endif
 #else
 	tst_resm(TCONF, "_SC_2_C_VERSION not defined");
 #endif
