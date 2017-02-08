@@ -283,6 +283,7 @@ test_proc_kill()
 	pid=$!
 	TST_CHECKPOINT_WAIT 0
 	echo $pid > tasks
+	sleep 1
 
 	signal_memcg_process $pid $3
 
