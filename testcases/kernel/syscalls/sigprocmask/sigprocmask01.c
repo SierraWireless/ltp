@@ -91,7 +91,7 @@ int TST_TOTAL = 1;
 int sig_catch = 0;		/* variable to blocked/unblocked signals */
 
 struct sigaction sa_new;	/* struct to hold signal info */
-sigset_t set;		/* signal set to hold signal lists */
+sigset_t set1;		/* signal set to hold signal lists */
 sigset_t sigset2;
 
 int main(int ac, char **av)
@@ -112,7 +112,7 @@ int main(int ac, char **av)
 		 * so that, signal will not be delivered to
 		 * the test process.
 		 */
-		TEST(sigprocmask(SIG_BLOCK, &set, 0));
+		TEST(sigprocmask(SIG_BLOCK, &set1, 0));
 
 		/* Get the process id of test process */
 		my_pid = getpid();
@@ -165,7 +165,7 @@ int main(int ac, char **av)
 				 */
 				errno = 0;
 				if (sigprocmask(SIG_UNBLOCK,
-						&set, 0) == -1) {
+						&set1, 0) == -1) {
 					tst_brkm(TFAIL, cleanup,
 						 "sigprocmask() failed "
 						 "to unblock signal, "
@@ -212,7 +212,7 @@ void setup(void)
 	 * Initialise the signal sets with the list that
 	 * excludes/includes  all system-defined signals.
 	 */
-	if (sigemptyset(&set) == -1) {
+	if (sigemptyset(&set1) == -1) {
 		tst_brkm(TFAIL, cleanup,
 			 "sigemptyset() failed, errno=%d : %s",
 			 errno, strerror(errno));
@@ -235,7 +235,7 @@ void setup(void)
 	 * Add specified signal (SIGINT) to the signal set
 	 * which excludes system-defined signals.
 	 */
-	if (sigaddset(&set, SIGINT) == -1) {
+	if (sigaddset(&set1, SIGINT) == -1) {
 		tst_brkm(TFAIL, cleanup,
 			 "sigaddset() failed, errno=%d : %s",
 			 errno, strerror(errno));

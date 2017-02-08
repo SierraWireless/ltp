@@ -57,7 +57,7 @@ int TST_TOTAL = 2;		/* Total number of test cases. */
 /**************/
 
 key_t key;
-sigset_t set;
+sigset_t set1;
 
 int child();
 static int rm_shm(int);
@@ -70,9 +70,9 @@ int main(void)
 
 	key = (key_t) getpid();
 
-	sigemptyset(&set);
-	sigaddset(&set, SIGUSR1);
-	sigprocmask(SIG_BLOCK, &set, NULL);
+	sigemptyset(&set1);
+	sigaddset(&set1, SIGUSR1);
+	sigprocmask(SIG_BLOCK, &set1, NULL);
 
 	pid = fork();
 	switch (pid) {
@@ -147,7 +147,7 @@ int child(void)
 	char *cp;
 	int sig;
 
-	sigwait(&set, &sig);
+	sigwait(&set1, &sig);
 	chld_pid = getpid();
 
 	if ((shmid = shmget(key, SIZE, 0)) < 0) {
