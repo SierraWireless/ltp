@@ -79,7 +79,11 @@ int TEST_ERRNO;
 	assert(strlen(buf) > 0);		\
 } while (0)
 
+#ifdef __GLIBC__
 static pthread_mutex_t tmutex = PTHREAD_RECURSIVE_MUTEX_INITIALIZER_NP;
+#else
+static pthread_mutex_t tmutex = {  PTHREAD_MUTEX_RECURSIVE };
+#endif
 
 static void check_env(void);
 static void tst_condense(int tnum, int ttype, const char *tmesg);
