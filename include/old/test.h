@@ -58,6 +58,9 @@
 #include "tst_clone.h"
 #include "old_device.h"
 #include "old_tmpdir.h"
+#ifndef __GLIBC__
+#include <bits/reg.h>
+#endif
 
 /*
  * Ensure that NUMSIGS is defined.
