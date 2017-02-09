@@ -19,6 +19,9 @@
 #define TST_TEST_H__
 
 #include <unistd.h>
+#ifndef __GLIBC__
+#include <limits.h>
+#endif
 
 #include "tst_common.h"
 #include "tst_res_flags.h"
