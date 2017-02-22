@@ -127,8 +127,8 @@ void setup(void)
 	fds[0] = SAFE_OPEN(cleanup, pathname, O_DIRECTORY);
 	fds[1] = fds[4] = fds[0];
 
-	SAFE_FILE_PRINTF(cleanup, testfile, testfile);
-	SAFE_FILE_PRINTF(cleanup, testfile2, testfile2);
+	SAFE_FILE_PRINTF(cleanup, testfile, "fchmodattest%d.txt");
+	SAFE_FILE_PRINTF(cleanup, testfile2, "%s/fchmodattest%d.txt");
 
 	fds[2] = SAFE_OPEN(cleanup, testfile3, O_CREAT | O_RDWR, 0600);
 	fds[3] = 100;
