@@ -37,7 +37,8 @@ if [ "x$(grep -w memory /proc/cgroups | cut -f4)" != "x1" ]; then
         exit 0
 fi
 
-RUN_TIME=$(( 15 * 60 ))
+ONE_MINUTE=60
+RUN_TIME=15
 
 cleanup()
 {
@@ -62,7 +63,7 @@ do_mount()
 # $1 - Number of cgroups
 # $2 - Allocated how much memory in one process? in MB
 # $3 - The interval to touch memory in a process
-# $4 - How long does this test run ? in second
+# $4 - How long does this test run ? in minutes
 run_stress()
 {
 	do_mount;
@@ -81,7 +82,11 @@ run_stress()
 		eval /bin/kill -s SIGUSR1 \$pid$i 2> /dev/null
 	done
 
-	sleep $4
+	for i in $(seq 0 $(($4-1)))
+	do
+		eval echo "Started $i min ago. Still alive... "
+		sleep $ONE_MINUTE
+	done
 
 	for i in $(seq 0 $(($1-1)))
 	do
