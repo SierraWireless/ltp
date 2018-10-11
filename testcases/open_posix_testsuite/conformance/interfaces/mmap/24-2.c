@@ -7,7 +7,7 @@
  * source tree.
  *
  * The mmap() function shall fail if:
- * [ENOMEM] MAP_FIXED was specified,
+ * [ENOMEM or EINVAL] MAP_FIXED was specified,
  * and the range [addr,addr+len) exceeds that allowed
  * for the address space of a process; or, if MAP_FIXED was not specified and
  * there is insufficient room in the address space to effect the mapping.
@@ -15,7 +15,7 @@
  * Test Step:
  * 1. Map a shared memory object, with size exceeding the value get from
  *    rlim_cur of resource RLIMIT_AS, setting MAP_FIXED;
- * 3. Should get ENOMEM.
+ * 3. Should get ENOMEM or EINVAL.
  */
 
 #include <stdio.h>
@@ -92,8 +92,8 @@ int main(void)
 	       (unsigned long)len);
 	pa = mmap(addr, len, PROT_READ | PROT_WRITE, MAP_FIXED | MAP_SHARED, fd,
 		  0);
-	if (pa == MAP_FAILED && errno == ENOMEM) {
-		printf("Got ENOMEM: %s\nTest PASSED\n", strerror(errno));
+	if (pa == MAP_FAILED && (errno == ENOMEM || errno == EINVAL)) {
+		printf("Got ENOMEM or EINVAL: %s\nTest PASSED\n", strerror(errno));
 		exit(PTS_PASS);
 	}
 
@@ -102,6 +102,6 @@ int main(void)
 	else
 		munmap(pa, len);
 	close(fd);
-	printf("Test Fail: Did not get ENOMEM as expected\n");
+	printf("Test Failed: Did not get ENOMEM or EINVAL as expected\n");
 	return PTS_FAIL;
 }
