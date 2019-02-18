@@ -29,6 +29,25 @@ if [ "x$SHELL_DEBUG" = x1 ] ; then
     set -x
 fi
 
+# SWISTART
+#=============================================================================
+# FUNCTION NAME:        command
+#
+# FUNCTION DESCRIPTION: Replace the built-in command from bash
+#
+# PARAMETERS:           [-v] command-to-check
+#
+# RETURNS:              0 if command exists, 1 else
+#=============================================================================
+command()
+{
+	[ $1 == "-v" ] && shift
+	which $1
+	return $?
+}
+# SWISTOP
+
+
 #=============================================================================
 # FUNCTION:   tst_cleanup
 # PURPOSE:    Clean up after a testcase.
