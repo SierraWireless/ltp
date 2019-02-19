@@ -75,10 +75,10 @@ $(1):: | $$(abs_top_builddir)/$$(basename $$(subst -,.,$(1)))
 endif
 endef
 
-COMMON_TARGETS		+= testcases tools
+COMMON_TARGETS		+= testcases tools sierra/scripts sierra/testcases sierra/tools
 # Don't want to nuke the original files if we're installing in-build-tree.
 ifneq ($(BUILD_TREE_STATE),$(BUILD_TREE_SRCDIR_INSTALL))
-INSTALL_TARGETS		+= runtest scenario_groups testscripts
+INSTALL_TARGETS		+= runtest scenario_groups testscripts sierra/testscripts
 CLEAN_TARGETS		+= include runtest scenario_groups testscripts
 endif
 INSTALL_TARGETS		+= $(COMMON_TARGETS)
