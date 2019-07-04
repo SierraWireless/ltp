@@ -54,7 +54,6 @@
 
 static uid_t uid;
 static char longpathname[PATH_MAX + 2];
-int mount_flag;
 
 static struct tcase {
 	const char *pathname;
@@ -73,12 +72,12 @@ static void access_test(struct tcase *tc, const char *user)
 {
 	TEST(access(tc->pathname, tc->mode));
 
-	if (TEST_RETURN != -1) {
+	if (TST_RET != -1) {
 		tst_res(TFAIL, "access as %s succeeded unexpectedly", user);
 		return;
 	}
 
-	if (tc->exp_errno != TEST_ERRNO) {
+	if (tc->exp_errno != TST_ERR) {
 		tst_res(TFAIL | TTERRNO,
 			"access as %s should fail with %s",
 			user, tst_strerrno(tc->exp_errno));
@@ -119,28 +118,15 @@ static void setup(void)
 
 	SAFE_SYMLINK(SNAME1, SNAME2);
 	SAFE_SYMLINK(SNAME2, SNAME1);
-
-	SAFE_MKFS(tst_device->dev, tst_device->fs_type, NULL, NULL);
-	SAFE_MKDIR(MNT_POINT, 0755);
-	SAFE_MOUNT(tst_device->dev, MNT_POINT, tst_device->fs_type,
-		MS_RDONLY, NULL);
-	mount_flag = 1;
-}
-
-static void cleanup(void)
-{
-	if (mount_flag)
-		tst_umount(MNT_POINT);
 }
 
 static struct tst_test test = {
-	.tid = "access04",
 	.tcnt = ARRAY_SIZE(tcases),
 	.needs_tmpdir = 1,
 	.needs_root = 1,
-	.needs_device = 1,
 	.forks_child = 1,
+	.needs_rofs = 1,
+	.mntpoint = MNT_POINT,
 	.setup = setup,
-	.cleanup = cleanup,
 	.test = verify_access,
 };

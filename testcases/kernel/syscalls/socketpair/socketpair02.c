@@ -56,7 +56,7 @@ static void verify_socketpair(unsigned int n)
 
 	TEST(socketpair(PF_UNIX, tc->type, 0, fds));
 
-	if (TEST_RETURN == -1)
+	if (TST_RET == -1)
 		tst_brk(TFAIL | TTERRNO, "socketpair() failed");
 
 	for (i = 0; i < 2; i++) {
@@ -84,15 +84,14 @@ ret:
 
 static void cleanup(void)
 {
-	if (fds[0] > 0 && close(fds[0]))
-		tst_res(TWARN | TERRNO, "failed to close file");
+	if (fds[0] > 0)
+		SAFE_CLOSE(fds[0]);
 
-	if (fds[1] > 0 && close(fds[1]))
-		tst_res(TWARN | TERRNO, "failed to close file");
+	if (fds[1] > 0)
+		SAFE_CLOSE(fds[1]);
 }
 
 static struct tst_test test = {
-	.tid = "socketpair02",
 	.tcnt = ARRAY_SIZE(tcases),
 	.test = verify_socketpair,
 	.min_kver = "2.6.27",

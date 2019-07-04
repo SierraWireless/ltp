@@ -21,7 +21,7 @@
 /*
  * Returns filesystem type to be used for the testing. Unless your test is
  * designed for specific filesystem you should use this function to the tested
- * filesytem.
+ * filesystem.
  *
  * If TST_DEV_FS_TYPE is set the function returns it's content,
  * otherwise default fs type hardcoded in the library is returned.
@@ -44,6 +44,8 @@ const char *tst_dev_fs_type(void);
  */
 const char *tst_acquire_device_(void (cleanup_fn)(void), unsigned int size);
 
+const char *tst_acquire_device__(unsigned int size);
+
 static inline const char *tst_acquire_device(void (cleanup_fn)(void))
 {
 	return tst_acquire_device_(cleanup_fn, 0);
@@ -52,7 +54,7 @@ static inline const char *tst_acquire_device(void (cleanup_fn)(void))
 /*
  * @dev: device path returned by the tst_acquire_device()
  */
-void tst_release_device(const char *dev);
+int tst_release_device(const char *dev);
 
 /*
  * Just like umount() but retries several times on failure.

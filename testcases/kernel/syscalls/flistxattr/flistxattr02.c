@@ -61,14 +61,14 @@ static void verify_flistxattr(unsigned int n)
 	char buf[t->size];
 
 	TEST(flistxattr(*t->fd, buf, t->size));
-	if (TEST_RETURN != -1) {
+	if (TST_RET != -1) {
 		tst_res(TFAIL,
 			"flistxattr() succeeded unexpectedly (returned %ld)",
-			TEST_RETURN);
+			TST_RET);
 		return;
 	}
 
-	if (t->exp_err != TEST_ERRNO) {
+	if (t->exp_err != TST_ERR) {
 		tst_res(TFAIL | TTERRNO, "flistxattr() failed "
 			 "unexpectedlly, expected %s",
 			 tst_strerrno(t->exp_err));
@@ -87,12 +87,11 @@ static void setup(void)
 
 static void cleanup(void)
 {
-	if (fd1 > 0 && close(fd1))
-		tst_res(TWARN | TERRNO, "failed to close file");
+	if (fd1 > 0)
+		SAFE_CLOSE(fd1);
 }
 
 static struct tst_test test = {
-	.tid = "flistxattr02",
 	.needs_tmpdir = 1,
 	.needs_root = 1,
 	.test = verify_flistxattr,

@@ -18,23 +18,31 @@
 #include "test.h"
 #include "ltp_priv.h"
 #include "tst_mkfs.h"
+#include "tst_device.h"
 
 #define OPTS_MAX 32
 
-void tst_mkfs(void (cleanup_fn)(void), const char *dev,
-              const char *fs_type, const char *const fs_opts[],
-              const char *extra_opt)
+void tst_mkfs_(const char *file, const int lineno, void (cleanup_fn)(void),
+	       const char *dev, const char *fs_type,
+	       const char *const fs_opts[], const char *const extra_opts[])
 {
 	int i, pos = 1, ret;
 	char mkfs[64];
 	const char *argv[OPTS_MAX] = {mkfs};
 	char fs_opts_str[1024] = "";
+	char extra_opts_str[1024] = "";
 
-	if (!dev)
-		tst_brkm(TBROK, cleanup_fn, "No device specified");
+	if (!dev) {
+		tst_brkm(TBROK, cleanup_fn,
+			 "%s:%d: No device specified", file, lineno);
+		return;
+	}
 
-	if (!fs_type)
-		tst_brkm(TBROK, cleanup_fn, "No fs_type specified");
+	if (!fs_type) {
+		tst_brkm(TBROK, cleanup_fn,
+			 "%s:%d: No fs_type specified", file, lineno);
+		return;
+	}
 
 	snprintf(mkfs, sizeof(mkfs), "mkfs.%s", fs_type);
 
@@ -44,7 +52,9 @@ void tst_mkfs(void (cleanup_fn)(void), const char *dev,
 
 			if (pos + 2 > OPTS_MAX) {
 				tst_brkm(TBROK, cleanup_fn,
-				         "Too much mkfs options");
+				         "%s:%d: Too much mkfs options",
+					 file, lineno);
+				return;
 			}
 
 			if (i)
@@ -55,19 +65,29 @@ void tst_mkfs(void (cleanup_fn)(void), const char *dev,
 
 	argv[pos++] = dev;
 
-	if (extra_opt) {
-		argv[pos++] = extra_opt;
+	if (extra_opts) {
+		for (i = 0; extra_opts[i]; i++) {
+			argv[pos++] = extra_opts[i];
 
-		if (pos + 1 > OPTS_MAX) {
-			tst_brkm(TBROK, cleanup_fn,
-			         "Too much mkfs options");
+			if (pos + 1 > OPTS_MAX) {
+				tst_brkm(TBROK, cleanup_fn,
+				         "%s:%d: Too much mkfs options", file, lineno);
+				return;
+			}
+
+			if (i)
+				strcat(extra_opts_str, " ");
+			strcat(extra_opts_str, extra_opts[i]);
 		}
 	}
 
 	argv[pos] = NULL;
 
+	if (tst_clear_device(dev))
+		tst_brkm(TBROK, cleanup_fn, "tst_clear_device() failed");
+
 	tst_resm(TINFO, "Formatting %s with %s opts='%s' extra opts='%s'",
-	         dev, fs_type, fs_opts_str, extra_opt ? extra_opt : "");
+	         dev, fs_type, fs_opts_str, extra_opts_str);
 	ret = tst_run_cmd(cleanup_fn, argv, "/dev/null", NULL, 1);
 
 	switch (ret) {
@@ -75,10 +95,10 @@ void tst_mkfs(void (cleanup_fn)(void), const char *dev,
 	break;
 	case 255:
 		tst_brkm(TCONF, cleanup_fn,
-			 "%s not found in $PATH", mkfs);
+			 "%s:%d: %s not found in $PATH", file, lineno, mkfs);
 	default:
 		tst_brkm(TBROK, cleanup_fn,
-			 "%s failed with %i", mkfs, ret);
+			 "%s:%d: %s failed with %i", mkfs, ret, file, lineno);
 	}
 }
 
@@ -92,15 +112,4 @@ const char *tst_dev_fs_type(void)
 		return fs_type;
 
 	return DEFAULT_FS_TYPE;
-}
-
-void safe_mkfs(const int lineno, const char *fname, const char *dev,
-               const char *fs_type, const char *const fs_opts[],
-               const char *extra_opt)
-{
-	/* ignore for now, will fix once all tst_mkfs() users are converted */
-	(void)lineno;
-	(void)fname;
-
-	tst_mkfs(NULL, dev, fs_type, fs_opts, extra_opt);
 }

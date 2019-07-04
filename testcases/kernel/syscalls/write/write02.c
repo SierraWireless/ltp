@@ -1,146 +1,56 @@
 /*
+ * Copyright (c) 2017 Carlo Marcelo Arenas Belon <carlo@gmail.com>
+ * Copyright (c) 2018 Cyril Hrubis <chrubis@suse.cz>
  *
- *   Copyright (c) International Business Machines  Corp., 2001
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 2 of the License, or
+ * (at your option) any later version.
  *
- *   This program is free software;  you can redistribute it and/or modify
- *   it under the terms of the GNU General Public License as published by
- *   the Free Software Foundation; either version 2 of the License, or
- *   (at your option) any later version.
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  *
- *   This program is distributed in the hope that it will be useful,
- *   but WITHOUT ANY WARRANTY;  without even the implied warranty of
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See
- *   the GNU General Public License for more details.
- *
- *   You should have received a copy of the GNU General Public License
- *   along with this program;  if not, write to the Free Software
- *   Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+/*
+ * Tests for a special case NULL buffer with size 0 is expected to return 0.
  */
 
-/*
- * NAME
- *	write02.c
- *
- * DESCRIPTION
- *	Basic functionality test: does the return from write match the count
- *	of the number of bytes written.
- *
- *
- * ALGORITHM
- *	Create a file and write some bytes out to it.
- *	Check the return count against the number returned.
- *
- * USAGE:  <for command-line>
- *      write02 [-c n] [-e] [-i n] [-I x] [-P x] [-t]
- *      where,  -c n : Run n copies concurrently.
- *              -e   : Turn on errno logging.
- *              -i n : Execute test n times.
- *              -I x : Execute test for x seconds.
- *              -P x : Pause for x seconds between iterations.
- *              -t   : Turn on syscall timing.
- *
- * History
- *	07/2001 John George
- *		-Ported
- *
- * Restrictions
- *	None
- */
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>
 #include <errno.h>
-#include <stdio.h>
-#include "test.h"
+#include "tst_test.h"
 
-char *TCID = "write02";
-int TST_TOTAL = 1;
+static int fd;
 
-void cleanup(void);
-void setup(void);
-
-char pfiln[40] = "";
-
-int main(int argc, char **argv)
+static void verify_write(void)
 {
-	int lc;
+	TEST(write(fd, NULL, 0));
 
-	int cwrite;
-	int fild;
-	int iws;
-	int badcount = 0;
-	char pwbuf[BUFSIZ + 1];
-
-	tst_parse_opts(argc, argv, NULL, NULL);
-
-	setup();		/* global setup for test */
-
-	/* The following loop checks looping state if -i option given */
-	for (lc = 0; TEST_LOOPING(lc); lc++) {
-
-		/* reset tst_count in case we are looping */
-		tst_count = 0;
-
-//block1:
-		tst_resm(TINFO, "Block 1: test to see write() returns proper "
-			 "write count");
-
-		for (iws = 0; iws < BUFSIZ; iws++) {
-			pwbuf[iws] = 'A' + (iws % 26);
-		}
-		pwbuf[BUFSIZ] = '\n';
-
-		if ((fild = creat(pfiln, 0777)) == -1) {
-			tst_brkm(TBROK, cleanup, "Can't creat Xwrit");
-		}
-		for (iws = BUFSIZ; iws > 0; iws--) {
-			if ((cwrite = write(fild, pwbuf, iws)) != iws) {
-				badcount++;
-				tst_resm(TINFO, "bad write count");
-			}
-		}
-		if (badcount != 0) {
-			tst_resm(TFAIL, "write() FAILED to return proper cnt");
-		} else {
-			tst_resm(TPASS, "write() PASSED");
-		}
-		tst_resm(TINFO, "block 1 passed");
-		close(fild);
+	if (TST_RET != 0) {
+		tst_res(TFAIL | TTERRNO,
+			"write() should have succeeded with ret=0");
+		return;
 	}
-	cleanup();
-	tst_exit();
+
+	tst_res(TPASS, "write(fd, NULL, 0) == 0");
 }
 
-/*
- * setup() - performs all ONE TIME setup for this test
- */
-void setup(void)
+static void setup(void)
 {
-
-	tst_sig(FORK, DEF_HANDLER, cleanup);
-
-	umask(0);
-
-	/* Pause if that option was specified
-	 * TEST_PAUSE contains the code to fork the test with the -i option.
-	 * You want to make sure you do this before you create your temporary
-	 * directory.
-	 */
-	TEST_PAUSE;
-
-	tst_tmpdir();
-
-	sprintf(pfiln, "write1.%d", getpid());
+	fd = SAFE_OPEN("test_file", O_RDWR | O_CREAT, 0700);
 }
 
-/*
- * cleanup() - performs all ONE TIME cleanup for this test at completion or
- * premature exit.
- */
-void cleanup(void)
+static void cleanup(void)
 {
-
-	unlink(pfiln);
-
-	tst_rmdir();
+	if (fd > 0)
+		SAFE_CLOSE(fd);
 }
+
+static struct tst_test test = {
+	.setup = setup,
+	.cleanup = cleanup,
+	.test_all = verify_write,
+	.needs_tmpdir = 1,
+};

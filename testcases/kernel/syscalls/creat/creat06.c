@@ -71,7 +71,6 @@
 #define	MODE2		0666
 
 static void setup(void);
-static void cleanup(void);
 static void test6_setup(void);
 static void test6_cleanup(void);
 #if !defined(UCLINUX)
@@ -80,7 +79,6 @@ static void bad_addr_setup(int);
 
 static struct passwd *ltpuser;
 static char long_name[PATH_MAX+2];
-static int mount_flag;
 
 static struct test_case_t {
 	char *fname;
@@ -111,12 +109,12 @@ static void verify_creat(unsigned int i)
 	if (tcases[i].cleanup != NULL)
 		tcases[i].cleanup();
 
-	if (TEST_RETURN != -1) {
+	if (TST_RET != -1) {
 		tst_res(TFAIL, "call succeeded unexpectedly");
 		return;
 	}
 
-	if (TEST_ERRNO == tcases[i].error) {
+	if (TST_ERR == tcases[i].error) {
 		tst_res(TPASS | TTERRNO, "got expected failure");
 		return;
 	}
@@ -140,13 +138,6 @@ static void setup(void)
 
 	SAFE_SYMLINK(TEST7_FILE, "test_file_eloop2");
 	SAFE_SYMLINK("test_file_eloop2", TEST7_FILE);
-
-	SAFE_MKFS(tst_device->dev, tst_device->fs_type, NULL, NULL);
-
-	SAFE_MKDIR("mntpoint", 0777);
-	SAFE_MOUNT(tst_device->dev, "mntpoint", tst_device->fs_type,
-	           MS_RDONLY, NULL);
-	mount_flag = 1;
 }
 
 #if !defined(UCLINUX)
@@ -170,19 +161,12 @@ static void test6_cleanup(void)
 	SAFE_SETEUID(0);
 }
 
-static void cleanup(void)
-{
-	if (mount_flag)
-		tst_umount("mntpoint");
-}
-
 static struct tst_test test = {
-	.tid = "creat06",
 	.tcnt = ARRAY_SIZE(tcases),
 	.test = verify_creat,
 	.needs_root = 1,
+	.needs_rofs = 1,
 	.needs_tmpdir = 1,
-	.needs_device = 1,
-	.cleanup = cleanup,
+	.mntpoint = "mntpoint",
 	.setup = setup,
 };

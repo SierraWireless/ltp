@@ -32,13 +32,13 @@ static void verify_nice(void)
 {
 	TEST(nice(NICEINC));
 
-	if (TEST_RETURN != -1) {
+	if (TST_RET != -1) {
 		tst_res(TFAIL, "nice(%i) succeded unexpectedly (returned %li)",
-			NICEINC, TEST_RETURN);
+			NICEINC, TST_RET);
 		return;
 	}
 
-	if (TEST_ERRNO != EPERM) {
+	if (TST_ERR != EPERM) {
 		tst_res(TFAIL | TTERRNO, "nice(%i) should fail with EPERM",
 			NICEINC);
 		return;
@@ -56,7 +56,6 @@ static void setup(void)
 }
 
 static struct tst_test test = {
-	.tid = "nice04",
 	.setup = setup,
 	.test_all = verify_nice,
 	.needs_root = 1,

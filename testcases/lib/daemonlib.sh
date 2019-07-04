@@ -1,7 +1,7 @@
 #!/bin/sh
 #
 # Copyright (C) 2009, Cisco Systems Inc.
-#  Garrett Cooper, August 2009
+#  Ngie Cooper, August 2009
 # Copyright (C) 2012-2014 Linux Test Project
 #
 # This program is free software; you can redistribute it and/or modify
@@ -69,7 +69,7 @@ stop_daemon()
 status_daemon()
 {
 	if [ $HAVE_SYSTEMCTL -eq 1 ]; then
-		systemctl status $1.service > /dev/null 2>&1
+		systemctl is-active $1.service > /dev/null 2>&1
 	elif command -v service >/dev/null 2>&1; then
 		service $1 status > /dev/null 2>&1
 	else

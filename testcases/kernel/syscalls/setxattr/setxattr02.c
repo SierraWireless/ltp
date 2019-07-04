@@ -45,6 +45,7 @@
 #include "config.h"
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/sysmacros.h>
 #include <sys/wait.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -56,15 +57,14 @@
 #ifdef HAVE_SYS_XATTR_H
 # include <sys/xattr.h>
 #endif
-#include "test.h"
-
-char *TCID = "setxattr02";
+#include "tst_test.h"
 
 #ifdef HAVE_SYS_XATTR_H
 #define XATTR_TEST_KEY "user.testkey"
 #define XATTR_TEST_VALUE "this is a test value"
 #define XATTR_TEST_VALUE_SIZE 20
 
+#define OFFSET    10
 #define FILENAME "setxattr02testfile"
 #define DIRNAME  "setxattr02testdir"
 #define SYMLINK  "setxattr02symlink"
@@ -73,9 +73,6 @@ char *TCID = "setxattr02";
 #define BLK      "setxattr02blk"
 #define SOCK     "setxattr02sock"
 
-static void setup(void);
-static void cleanup(void);
-
 struct test_case {
 	char *fname;
 	char *key;
@@ -83,6 +80,7 @@ struct test_case {
 	size_t size;
 	int flags;
 	int exp_err;
+	int needskeyset;
 };
 static struct test_case tc[] = {
 	{			/* case 00, set attr to reg */
@@ -108,6 +106,7 @@ static struct test_case tc[] = {
 	 .size = XATTR_TEST_VALUE_SIZE,
 	 .flags = XATTR_CREATE,
 	 .exp_err = EEXIST,
+	 .needskeyset = 1,
 	 },
 	{			/* case 03, set attr to fifo */
 	 .fname = FIFO,
@@ -143,100 +142,83 @@ static struct test_case tc[] = {
 	 },
 };
 
-int TST_TOTAL = sizeof(tc) / sizeof(tc[0]);
-
-int main(int argc, char *argv[])
+static void verify_setxattr(unsigned int i)
 {
-	int lc;
-	int i;
-
-	tst_parse_opts(argc, argv, NULL, NULL);
-
-	setup();
-
-	for (lc = 0; TEST_LOOPING(lc); lc++) {
-		tst_count = 0;
-
-		for (i = 0; i < TST_TOTAL; i++) {
-			TEST(setxattr(tc[i].fname, tc[i].key, tc[i].value,
-				      tc[i].size, tc[i].flags));
-
-			if (TEST_ERRNO == tc[i].exp_err) {
-				tst_resm(TPASS | TTERRNO, "expected behavior");
-			} else {
-				tst_resm(TFAIL | TTERRNO, "unexpected behavior "
-					 "- expected errno %d - Got",
-					 tc[i].exp_err);
-			}
-		}
+	/* some tests might require existing keys for each iteration */
+	if (tc[i].needskeyset) {
+		SAFE_SETXATTR(tc[i].fname, tc[i].key, tc[i].value, tc[i].size,
+				XATTR_CREATE);
 	}
 
-	cleanup();
-	tst_exit();
+	TEST(setxattr(tc[i].fname, tc[i].key, tc[i].value, tc[i].size,
+			tc[i].flags));
+
+	if (TST_RET == -1 && TST_ERR == EOPNOTSUPP)
+		tst_brk(TCONF, "setxattr(2) not supported");
+
+	/* success */
+
+	if (!tc[i].exp_err) {
+		if (TST_RET) {
+			tst_res(TFAIL | TTERRNO,
+				"setxattr(2) on %s failed with %li",
+				tc[i].fname + OFFSET, TST_RET);
+			return;
+		}
+
+		/* this is needed for subsequent iterations */
+		SAFE_REMOVEXATTR(tc[i].fname, tc[i].key);
+
+		tst_res(TPASS, "setxattr(2) on %s passed",
+				tc[i].fname + OFFSET);
+		return;
+	}
+
+	if (TST_RET == 0) {
+		tst_res(TFAIL, "setxattr(2) on %s passed unexpectedly",
+				tc[i].fname + OFFSET);
+		return;
+	}
+
+	/* fail */
+
+	if (tc[i].exp_err != TST_ERR) {
+		tst_res(TFAIL | TTERRNO,
+				"setxattr(2) on %s should have failed with %s",
+				tc[i].fname + OFFSET,
+				tst_strerrno(tc[i].exp_err));
+		return;
+	}
+
+	/* key might have been added AND test might have failed, remove it */
+	if (tc[i].needskeyset)
+		SAFE_REMOVEXATTR(tc[i].fname, tc[i].key);
+
+	tst_res(TPASS | TTERRNO, "setxattr(2) on %s failed",
+			tc[i].fname + OFFSET);
 }
 
 static void setup(void)
 {
-	int fd;
-	dev_t dev;
+	dev_t dev = makedev(1, 3);
 
-	tst_require_root();
-
-	tst_tmpdir();
-
-	/* Test for xattr support */
-	fd = creat("testfile", 0644);
-	if (fd == -1)
-		tst_brkm(TBROK | TERRNO, cleanup, "Create testfile failed");
-	close(fd);
-	if (setxattr("testfile", "user.test", "test", 4, XATTR_CREATE) == -1)
-		if (errno == ENOTSUP)
-			tst_brkm(TCONF, cleanup, "No xattr support in fs or "
-				 "mount without user_xattr option");
-	unlink("testfile");
-
-	/* Create test files */
-	fd = creat(FILENAME, 0644);
-	if (fd == -1)
-		tst_brkm(TBROK | TERRNO, cleanup, "Create test file(%s) failed",
-			 FILENAME);
-	close(fd);
-
-	if (mkdir(DIRNAME, 0644) == -1)
-		tst_brkm(TBROK | TERRNO, cleanup, "Create test dir(%s) failed",
-			 DIRNAME);
-
-	if (symlink(FILENAME, SYMLINK) == -1)
-		tst_brkm(TBROK | TERRNO, cleanup, "Create symlink(%s->%s)"
-			 " failed", SYMLINK, FILENAME);
-
-	if (mknod(FIFO, S_IFIFO | 0777, 0) == -1)
-		tst_brkm(TBROK | TERRNO, cleanup, "Create FIFO(%s) failed",
-			 FIFO);
-
-	dev = makedev(1, 3);
-	if (mknod(CHR, S_IFCHR | 0777, dev) == -1)
-		tst_brkm(TBROK | TERRNO, cleanup, "Create char special(%s)"
-			 " failed", CHR);
-
-	if (mknod(BLK, S_IFBLK | 0777, 0) == -1)
-		tst_brkm(TBROK | TERRNO, cleanup, "Create block special(%s)"
-			 " failed", BLK);
-
-	if (mknod(SOCK, S_IFSOCK | 0777, 0) == -1)
-		tst_brkm(TBROK | TERRNO, cleanup, "Create socket(%s) failed",
-			 SOCK);
-
-	TEST_PAUSE;
+	SAFE_TOUCH(FILENAME, 0644, NULL);
+	SAFE_MKDIR(DIRNAME, 0644);
+	SAFE_SYMLINK(FILENAME, SYMLINK);
+	SAFE_MKNOD(FIFO, S_IFIFO | 0777, 0);
+	SAFE_MKNOD(CHR, S_IFCHR | 0777, dev);
+	SAFE_MKNOD(BLK, S_IFBLK | 0777, 0);
+	SAFE_MKNOD(SOCK, S_IFSOCK | 0777, 0);
 }
 
-static void cleanup(void)
-{
-	tst_rmdir();
-}
+static struct tst_test test = {
+	.setup = setup,
+	.test = verify_setxattr,
+	.tcnt = ARRAY_SIZE(tc),
+	.needs_tmpdir = 1,
+	.needs_root = 1,
+};
+
 #else /* HAVE_SYS_XATTR_H */
-int main(int argc, char *argv[])
-{
-	tst_brkm(TCONF, NULL, "<sys/xattr.h> does not exist.");
-}
+TST_TEST_TCONF("<sys/xattr.h> does not exist");
 #endif

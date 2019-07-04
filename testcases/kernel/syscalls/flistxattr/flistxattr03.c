@@ -56,12 +56,12 @@ static int check_suitable_buf(const int file, long size)
 static void verify_flistxattr(unsigned int n)
 {
 	TEST(flistxattr(fd[n], NULL, 0));
-	if (TEST_RETURN == -1) {
+	if (TST_RET == -1) {
 		tst_res(TFAIL | TTERRNO, "flistxattr() failed");
 		return;
 	}
 
-	if (check_suitable_buf(fd[n], TEST_RETURN))
+	if (check_suitable_buf(fd[n], TST_RET))
 		tst_res(TPASS, "flistxattr() succeed with suitable buffer");
 	else
 		tst_res(TFAIL, "flistxattr() failed with small buffer");
@@ -78,14 +78,11 @@ static void setup(void)
 
 static void cleanup(void)
 {
-	if (fd[1] > 0 && close(fd[1]))
-		tst_res(TWARN | TERRNO, "failed to close file");
-	if (fd[0] > 0 && close(fd[0]))
-		tst_res(TWARN | TERRNO, "failed to close file");
+	SAFE_CLOSE(fd[1]);
+	SAFE_CLOSE(fd[0]);
 }
 
 static struct tst_test test = {
-	.tid = "flistxattr03",
 	.needs_tmpdir = 1,
 	.needs_root = 1,
 	.test = verify_flistxattr,

@@ -84,6 +84,7 @@
 #undef _GNU_SOURCE
 
 #include "test.h"
+#include "safe_macros.h"
 
 #define TEMPFILE	"mremapfile"
 
@@ -232,9 +233,7 @@ void cleanup(void)
 		tst_brkm(TBROK | TERRNO, NULL, "munmap failed");
 
 	/* Close the temporary file */
-	if (close(fildes) < 0) {
-		tst_brkm(TBROK, NULL, "closing %s failed", TEMPFILE);
-	}
+	SAFE_CLOSE(NULL, fildes);
 
 	tst_rmdir();
 }

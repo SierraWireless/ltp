@@ -48,13 +48,13 @@ static void child_fn(unsigned int i)
 
 	TEST(creat(tcases[i].fname, 0444));
 
-	if (TEST_RETURN != -1) {
+	if (TST_RET != -1) {
 		SAFE_UNLINK(tcases[i].fname);
 		tst_res(TFAIL, "call succeeded unexpectedly");
 		return;
 	}
 
-	if (TEST_ERRNO != EACCES) {
+	if (TST_ERR != EACCES) {
 		tst_res(TFAIL | TTERRNO, "Expected EACCES");
 		return;
 	}
@@ -68,7 +68,7 @@ static void verify_creat(unsigned int i)
 		child_fn(i);
 }
 
-void setup(void)
+static void setup(void)
 {
 	struct passwd *pw;
 	int fd;
@@ -82,7 +82,6 @@ void setup(void)
 }
 
 static struct tst_test test = {
-	.tid = "creat04",
 	.tcnt = ARRAY_SIZE(tcases),
 	.test = verify_creat,
 	.needs_tmpdir = 1,

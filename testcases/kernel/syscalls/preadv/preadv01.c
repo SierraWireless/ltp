@@ -62,14 +62,14 @@ void verify_preadv(unsigned int n)
 	SAFE_LSEEK(fd, 0, SEEK_SET);
 
 	TEST(preadv(fd, rd_iovec, tc->count, tc->offset));
-	if (TEST_RETURN < 0) {
+	if (TST_RET < 0) {
 		tst_res(TFAIL | TTERRNO, "Preadv(2) failed");
 		return;
 	}
 
-	if (TEST_RETURN != tc->size) {
-		tst_res(TFAIL, "Preadv(2) read %li bytes, expected %li",
-			 TEST_RETURN, tc->size);
+	if (TST_RET != tc->size) {
+		tst_res(TFAIL, "Preadv(2) read %li bytes, expected %zi",
+			 TST_RET, tc->size);
 		return;
 	}
 
@@ -89,7 +89,7 @@ void verify_preadv(unsigned int n)
 		return;
 	}
 
-	tst_res(TPASS, "Preadv(2) read %li bytes successfully "
+	tst_res(TPASS, "Preadv(2) read %zi bytes successfully "
 		 "with content '%c' expectedly", tc->size, tc->content);
 }
 
@@ -108,12 +108,11 @@ void setup(void)
 
 void cleanup(void)
 {
-	if (fd > 0 && close(fd))
-		tst_res(TWARN | TERRNO, "Failed to close file");
+	if (fd > 0)
+		SAFE_CLOSE(fd);
 }
 
 static struct tst_test test = {
-	.tid = "preadv01",
 	.tcnt = ARRAY_SIZE(tcases),
 	.setup = setup,
 	.cleanup = cleanup,

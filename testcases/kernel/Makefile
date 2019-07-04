@@ -18,7 +18,7 @@
 #    with this program; if not, write to the Free Software Foundation, Inc.,
 #    51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 #
-# Garrett Cooper, July 2009
+# Ngie Cooper, July 2009
 #
 
 top_srcdir		?= ../..
@@ -38,6 +38,7 @@ ifneq ($(UCLINUX),1)
 SUBDIRS			+= connectors \
 			   containers \
 			   controllers \
+			   crypto \
 			   device-drivers \
 			   firmware \
 			   fs \
@@ -52,7 +53,6 @@ SUBDIRS			+= connectors \
 			   security \
 			   timers \
 			   tracing \
-			   module \
 
 ifneq ($(LIBC),musl)
 SUBDIRS			+= pty
@@ -64,15 +64,9 @@ endif
 
 endif
 
-MAKE_DEPS		:= include/linux_syscall_numbers.h
-
-include:
-	mkdir -p "$@"
-
-linux-syscall-numbers-clean:: include
-	$(MAKE) -C $^ -f "$(abs_srcdir)/$^/Makefile" clean
-
-include/linux_syscall_numbers.h: include
-	$(MAKE) -C $^ -f "$(abs_srcdir)/$^/Makefile" all
+ifeq ($(ANDROID),1)
+FILTER_OUT_DIRS		+= containers controllers device-drivers fs io ipc mem \
+				sched security timers
+endif
 
 include $(top_srcdir)/include/mk/generic_trunk_target.mk

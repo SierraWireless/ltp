@@ -49,6 +49,7 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include "test.h"
+#include "safe_macros.h"
 
 char *TCID = "pipe04";
 int TST_TOTAL = 1;
@@ -95,9 +96,7 @@ int main(int ac, char **av)
 		/* reset tst_count in case we are looping */
 		tst_count = 0;
 
-		if (pipe(fildes) == -1)
-			tst_brkm(TBROK, cleanup, "pipe() failed - errno %d",
-				 errno);
+		SAFE_PIPE(cleanup, fildes);
 
 		if ((c1pid = FORK_OR_VFORK()) == -1)
 			tst_brkm(TBROK, cleanup, "fork() failed - "
@@ -236,7 +235,7 @@ void c2func(void)
 			tst_resm(TBROK | TERRNO, "[child 2] pipe write failed");
 }
 
-void alarmfunc(int sig)
+void alarmfunc(int sig LTP_ATTRIBUTE_UNUSED)
 {
 	/* for some reason tst_brkm doesn't seem to work in a signal handler */
 	tst_brkm(TFAIL, cleanup, "one or more children did't die in 60 second "

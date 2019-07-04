@@ -1,109 +1,85 @@
 #!/bin/sh
-# Copyright (c) 2014-2016 Oracle and/or its affiliates. All Rights Reserved.
-#
-# This program is free software; you can redistribute it and/or
-# modify it under the terms of the GNU General Public License as
-# published by the Free Software Foundation; either version 2 of
-# the License, or (at your option) any later version.
-#
-# This program is distributed in the hope that it would be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program; if not, write the Free Software Foundation,
-# Inc.,  51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright (c) 2014-2018 Oracle and/or its affiliates. All Rights Reserved.
 #
 # Author: Alexey Kodanev <alexey.kodanev@oracle.com>
-#
 
-# default command-line options
-user_name="root"
-use_ssh=0
-clients_num=2
-client_requests=2000000
-max_requests=3
+TST_SETUP="setup"
+TST_TESTFUNC="test"
+TST_CNT=2
+TST_CLEANUP="cleanup"
+TST_MIN_KVER="3.7"
+TST_NEEDS_TMPDIR=1
+TST_NEEDS_ROOT=1
+TST_NEEDS_CMDS="tc"
+TST_OPTS="R:"
+TST_USAGE=tcp_fastopen_usage
+TST_PARSE_ARGS=tcp_fastopen_parse_args
 
-TST_TOTAL=1
-TCID="tcp_fastopen"
+srv_replies=3
 
-. test_net.sh
+tcp_fastopen_usage()
+{
+	echo "-R x    Number of requests, after which connection is closed"
+}
 
-tfo_result="netload.res"
-
-while getopts :hu:sr:p:n:R:6 opt; do
-	case "$opt" in
-	h)
-		echo "Usage:"
-		echo "h        help"
-		echo "u x      server user name"
-		echo "s        use ssh to run remote cmds"
-		echo "n x      num of clients running in parallel"
-		echo "r x      the number of client requests"
-		echo "R x      num of requests, after which conn. closed"
-		echo "6        run over IPv6"
-		exit 0
-	;;
-	u) user_name=$OPTARG ;;
-	s) export TST_USE_SSH=1 ;;
-	n) clients_num=$OPTARG ;;
-	r) client_requests=$OPTARG ;;
-	R) max_requests=$OPTARG ;;
-	6) # skip, test_net library already processed it
-	;;
-	*) tst_brkm TBROK "unknown option: $opt" ;;
+tcp_fastopen_parse_args()
+{
+	case "$1" in
+	R) srv_replies=$2 ;;
 	esac
-done
+}
+
+. tst_net.sh
 
 cleanup()
 {
-	tst_resm TINFO "cleanup..."
-	tst_rhost_run -c "pkill -9 netstress\$"
-	tst_rmdir
+	tc qdisc del dev $(tst_iface) root netem delay 100 >/dev/null
 }
 
-read_result_file()
+compare()
 {
-	if [ -f $tfo_result ]; then
-		if [ -r $tfo_result ]; then
-			cat $tfo_result
-		else
-			tst_brkm TBROK "Failed to read result file"
-		fi
+	tfo_cmp=$(( 100 - ($time_tfo_on * 100) / $time_tfo_off ))
+
+	if [ "$tfo_cmp" -lt 3 ]; then
+		tst_res TFAIL "$1 perf result is '$tfo_cmp' percent"
 	else
-		tst_brkm TBROK "Failed to find result file"
+		tst_res TPASS "$1 perf result is '$tfo_cmp' percent"
 	fi
 }
 
-tst_require_root
+setup()
+{
+	if tst_kvcmp -lt "3.16" && [ "$TST_IPV6" ]; then
+		tst_brk TCONF "test must be run with kernel 3.16 or newer"
+	fi
 
-if tst_kvcmp -lt "3.7"; then
-	tst_brkm TCONF "test must be run with kernel 3.7 or newer"
-fi
+	ROD tc qdisc add dev $(tst_iface) root netem delay 100
+}
 
-if tst_kvcmp -lt "3.16" && [ "$TST_IPV6" ]; then
-	tst_brkm TCONF "test must be run with kernel 3.16 or newer"
-fi
+test1()
+{
+	tst_res TINFO "using old TCP API and set tcp_fastopen to '0'"
+	tst_netload -H $(tst_ipaddr rhost) -t 0 -R $srv_replies
+	time_tfo_off=$(cat tst_netload.res)
 
-trap "tst_brkm TBROK 'test interrupted'" INT
-TST_CLEANUP="cleanup"
-tst_tmpdir
+	tst_res TINFO "using new TCP API and set tcp_fastopen to '3'"
+	tst_netload -H $(tst_ipaddr rhost) -f -t 3 -R $srv_replies
+	time_tfo_on=$(cat tst_netload.res)
 
-tst_resm TINFO "using old TCP API"
-tst_netload $(tst_ipaddr rhost) $tfo_result TFO -o -O
-time_tfo_off=$(read_result_file)
+	compare
+}
 
-tst_resm TINFO "using new TCP API"
-tst_netload $(tst_ipaddr rhost) $tfo_result TFO
-time_tfo_on=$(read_result_file)
+test2()
+{
+	tst_kvcmp -lt "4.11" && \
+		tst_brk TCONF "next test must be run with kernel 4.11 or newer"
 
-tfo_cmp=$(( 100 - ($time_tfo_on * 100) / $time_tfo_off ))
+	tst_res TINFO "using connect() and TCP_FASTOPEN_CONNECT socket option"
+	tst_netload -H $(tst_ipaddr rhost) -F -t 3 -R $srv_replies
+	time_tfo_on=$(cat tst_netload.res)
 
-if [ "$tfo_cmp" -lt 3 ]; then
-	tst_resm TFAIL "TFO performance result is '$tfo_cmp' percent"
-else
-	tst_resm TPASS "TFO performance result is '$tfo_cmp' percent"
-fi
+	compare
+}
 
-tst_exit
+tst_run

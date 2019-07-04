@@ -39,7 +39,7 @@
 /* fanotify(7) wrappers */
 
 #include <stdint.h>
-#include "linux_syscall_numbers.h"
+#include "lapi/syscalls.h"
 
 static int fanotify_init(unsigned int flags, unsigned int event_f_flags)
 {
@@ -53,5 +53,24 @@ static long fanotify_mark(int fd, unsigned int flags, uint64_t mask,
 }
 
 #endif /* HAVE_SYS_FANOTIFY_H */
+
+#ifndef FAN_REPORT_TID
+#define FAN_REPORT_TID		0x00000100
+#endif
+
+#ifndef FAN_MARK_INODE
+#define FAN_MARK_INODE		0
+#endif
+#ifndef FAN_MARK_FILESYSTEM
+#define FAN_MARK_FILESYSTEM	0x00000100
+#endif
+
+struct fanotify_mark_type {
+	unsigned int flag;
+	const char * name;
+};
+
+#define INIT_FANOTIFY_MARK_TYPE(t) \
+	{ FAN_MARK_ ## t, "FAN_MARK_" #t }
 
 #endif /* __FANOTIFY_H__ */

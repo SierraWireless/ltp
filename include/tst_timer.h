@@ -34,6 +34,11 @@
 #include <sys/time.h>
 #include <time.h>
 
+static inline long long tst_timespec_to_ns(struct timespec t)
+{
+	return t.tv_sec * 1000000000 + t.tv_nsec;
+}
+
 /*
  * Converts timespec to microseconds.
  */
@@ -48,6 +53,22 @@ static inline long long tst_timespec_to_us(struct timespec t)
 static inline long long tst_timespec_to_ms(struct timespec t)
 {
 	return t.tv_sec * 1000 + (t.tv_nsec + 500000) / 1000000;
+}
+
+/*
+ * Converts timeval to microseconds.
+ */
+static inline long long tst_timeval_to_us(struct timeval t)
+{
+	return t.tv_sec * 1000000 + t.tv_usec;
+}
+
+/*
+ * Converts timeval to miliseconds.
+ */
+static inline long long tst_timeval_to_ms(struct timeval t)
+{
+	return t.tv_sec * 1000 + (t.tv_usec + 500) / 1000;
 }
 
 /*
@@ -72,6 +93,32 @@ static inline struct timeval tst_us_to_timeval(long long us)
 
 	ret.tv_sec = us / 1000000;
 	ret.tv_usec = us % 1000000;
+
+	return ret;
+}
+
+/*
+ * Converts ms to struct timespec
+ */
+static inline struct timespec tst_ms_to_timespec(long long ms)
+{
+	struct timespec ret;
+
+	ret.tv_sec = ms / 1000;
+	ret.tv_nsec = (ms % 1000) * 1000000;
+
+	return ret;
+}
+
+/*
+ * Converts us to struct timespec
+ */
+static inline struct timespec tst_us_to_timespec(long long us)
+{
+	struct timespec ret;
+
+	ret.tv_sec = us / 1000000;
+	ret.tv_nsec = (us % 1000000) * 1000;
 
 	return ret;
 }
@@ -124,6 +171,12 @@ static inline struct timespec tst_timespec_diff(struct timespec t1,
 	return res;
 }
 
+static inline long long tst_timespec_diff_ns(struct timespec t1,
+					     struct timespec t2)
+{
+	return t1.tv_nsec - t2.tv_nsec + 1000000000LL * (t1.tv_sec - t2.tv_sec);
+}
+
 static inline long long tst_timespec_diff_us(struct timespec t1,
                                              struct timespec t2)
 {
@@ -134,6 +187,38 @@ static inline long long tst_timespec_diff_ms(struct timespec t1,
                                              struct timespec t2)
 {
 	return tst_timespec_to_ms(tst_timespec_diff(t1, t2));
+}
+
+/*
+ * Returns difference between two timeval structures.
+ */
+static inline struct timeval tst_timeval_diff(struct timeval t1,
+                                              struct timeval t2)
+{
+	struct timeval res;
+
+	res.tv_sec = t1.tv_sec - t2.tv_sec;
+
+	if (t1.tv_usec < t2.tv_usec) {
+		res.tv_sec--;
+		res.tv_usec = 1000000 - (t2.tv_usec - t1.tv_usec);
+	} else {
+		res.tv_usec = t1.tv_usec - t2.tv_usec;
+	}
+
+	return res;
+}
+
+static inline long long tst_timeval_diff_us(struct timeval t1,
+                                            struct timeval t2)
+{
+	return tst_timeval_to_us(tst_timeval_diff(t1, t2));
+}
+
+static inline long long tst_timeval_diff_ms(struct timeval t1,
+                                            struct timeval t2)
+{
+	return tst_timeval_to_ms(tst_timeval_diff(t1, t2));
 }
 
 /*
@@ -176,6 +261,14 @@ void tst_timer_check(clockid_t clk_id);
  * @clk_id: Posix clock to use.
  */
 void tst_timer_start(clockid_t clk_id);
+
+/*
+ * Returns true if timer started by tst_timer_start() has been running for
+ * longer than ms seconds.
+ *
+ * @ms: Time interval in miliseconds.
+ */
+int tst_timer_expired_ms(long long ms);
 
 /*
  * Marks timer end time.

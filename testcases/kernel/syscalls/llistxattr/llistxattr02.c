@@ -68,14 +68,14 @@ static void verify_llistxattr(unsigned int n)
 	char buf[t->size];
 
 	TEST(llistxattr(t->path, buf, sizeof(buf)));
-	if (TEST_RETURN != -1) {
+	if (TST_RET != -1) {
 		tst_res(TFAIL,
 			"llistxattr() succeeded unexpectedly (returned %ld)",
-			TEST_RETURN);
+			TST_RET);
 		return;
 	}
 
-	if (TEST_ERRNO != t->exp_err) {
+	if (TST_ERR != t->exp_err) {
 		tst_res(TFAIL | TTERRNO, "llistxattr() failed "
 			 "unexpectedlly, expected %s",
 			 tst_strerrno(t->exp_err));
@@ -97,7 +97,6 @@ static void setup(void)
 }
 
 static struct tst_test test = {
-	.tid = "llistxattr02",
 	.needs_tmpdir = 1,
 	.needs_root = 1,
 	.test = verify_llistxattr,

@@ -57,12 +57,12 @@ static void verify_umount(unsigned int n)
 
 	TEST(umount(tc->mntpoint));
 
-	if (TEST_RETURN != -1) {
+	if (TST_RET != -1) {
 		tst_res(TFAIL, "umount() succeeds unexpectedly");
 		return;
 	}
 
-	if (tc->exp_errno != TEST_ERRNO) {
+	if (tc->exp_errno != TST_ERR) {
 		tst_res(TFAIL | TTERRNO, "umount() should fail with %s",
 			tst_strerrno(tc->exp_errno));
 		return;
@@ -76,7 +76,6 @@ static void setup(void)
 {
 	memset(long_path, 'a', PATH_MAX + 1);
 
-	SAFE_MKFS(tst_device->dev, tst_device->fs_type, NULL, NULL);
 	SAFE_MKDIR(MNTPOINT, 0775);
 	SAFE_MOUNT(tst_device->dev, MNTPOINT, tst_device->fs_type, 0, NULL);
 	mount_flag = 1;
@@ -86,19 +85,18 @@ static void setup(void)
 
 static void cleanup(void)
 {
-	if (fd > 0 && close(fd))
-		tst_res(TWARN | TERRNO, "Failed to close file");
+	if (fd > 0)
+		SAFE_CLOSE(fd);
 
 	if (mount_flag)
 		tst_umount(MNTPOINT);
 }
 
 static struct tst_test test = {
-	.tid = "umount02",
 	.tcnt = ARRAY_SIZE(tcases),
 	.needs_root = 1,
 	.needs_tmpdir = 1,
-	.needs_device = 1,
+	.format_device = 1,
 	.setup = setup,
 	.cleanup = cleanup,
 	.test = verify_umount,

@@ -69,14 +69,14 @@ static void verify_listxattr(unsigned int n)
 	char buf[t->size];
 
 	TEST(listxattr(t->path, buf, sizeof(buf)));
-	if (TEST_RETURN != -1) {
+	if (TST_RET != -1) {
 		tst_res(TFAIL,
 			"listxattr() succeeded unexpectedly (returned %ld)",
-			TEST_RETURN);
+			TST_RET);
 		return;
 	}
 
-	if (t->exp_err != TEST_ERRNO) {
+	if (t->exp_err != TST_ERR) {
 		tst_res(TFAIL | TTERRNO, "listxattr() failed "
 			 "unexpectedlly, expected %s",
 			 tst_strerrno(t->exp_err));
@@ -96,7 +96,6 @@ static void setup(void)
 }
 
 static struct tst_test test = {
-	.tid = "listxattr02",
 	.needs_tmpdir = 1,
 	.needs_root = 1,
 	.test = verify_listxattr,

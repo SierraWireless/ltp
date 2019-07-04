@@ -48,11 +48,14 @@
 #include <sys/wait.h>
 
 #include "test.h"
+#include "safe_macros.h"
 #include "usctest.h"
 #include "ltp_priv.h"
+#include "tst_ansi_color.h"
 
 long TEST_RETURN;
 int TEST_ERRNO;
+void *TST_RET_PTR;
 
 #define VERBOSE      1
 #define NOPASS       3
@@ -79,17 +82,24 @@ int TEST_ERRNO;
 	assert(strlen(buf) > 0);		\
 } while (0)
 
-#ifdef __GLIBC__
-static pthread_mutex_t tmutex = PTHREAD_RECURSIVE_MUTEX_INITIALIZER_NP;
-#else
-static pthread_mutex_t tmutex = {  PTHREAD_MUTEX_RECURSIVE };
+#ifndef PTHREAD_RECURSIVE_MUTEX_INITIALIZER_NP
+# ifdef __ANDROID__
+#  define PTHREAD_RECURSIVE_MUTEX_INITIALIZER_NP \
+	PTHREAD_RECURSIVE_MUTEX_INITIALIZER
+# else
+/* MUSL: http://www.openwall.com/lists/musl/2017/02/20/5 */
+#  define PTHREAD_RECURSIVE_MUTEX_INITIALIZER_NP  { {PTHREAD_MUTEX_RECURSIVE} }
+# endif
 #endif
+
+static pthread_mutex_t tmutex = PTHREAD_RECURSIVE_MUTEX_INITIALIZER_NP;
 
 static void check_env(void);
 static void tst_condense(int tnum, int ttype, const char *tmesg);
 static void tst_print(const char *tcid, int tnum, int ttype, const char *tmesg);
 
 static int T_exitval = 0;	/* exit value used by tst_exit() */
+static int passed_cnt;
 static int T_mode = VERBOSE;	/* flag indicating print mode: VERBOSE, */
 				/* NOPASS, DISCARD */
 
@@ -165,6 +175,9 @@ static void tst_res__(const char *file, const int lineno, int ttype,
 	 */
 	T_exitval |= ttype_result;
 
+	if (ttype_result == TPASS)
+		passed_cnt++;
+
 	check_env();
 
 	/*
@@ -233,7 +246,7 @@ static void tst_condense(int tnum, int ttype, const char *tmesg)
 	Buffered = TRUE;
 }
 
-void tst_flush(void)
+void tst_old_flush(void)
 {
 	NO_NEWLIB_ASSERT("Unknown", 0);
 
@@ -258,7 +271,7 @@ static void tst_print(const char *tcid, int tnum, int ttype, const char *tmesg)
 	const char *type;
 	int ttype_result = TTYPE_RESULT(ttype);
 	char message[USERMESG];
-	size_t size;
+	size_t size = 0;
 
 	/*
 	 * Save the test result type by ORing ttype into the current exit value
@@ -284,14 +297,26 @@ static void tst_print(const char *tcid, int tnum, int ttype, const char *tmesg)
 	 * Build the result line and print it.
 	 */
 	type = strttype(ttype);
+
 	if (T_mode == VERBOSE) {
-		size = snprintf(message, sizeof(message),
-				"%-8s %4d  %s  :  %s", tcid, tnum, type, tmesg);
+		size += snprintf(message + size, sizeof(message) - size,
+				"%-8s %4d  ", tcid, tnum);
 	} else {
-		size = snprintf(message, sizeof(message),
-				"%-8s %4d       %s  :  %s",
-				tcid, tnum, type, tmesg);
+		size += snprintf(message + size, sizeof(message) - size,
+				"%-8s %4d       ", tcid, tnum);
 	}
+
+	if (size >= sizeof(message)) {
+		printf("%s: %i: line too long\n", __func__, __LINE__);
+		abort();
+	}
+
+	if (tst_color_enabled(STDOUT_FILENO))
+		size += snprintf(message + size, sizeof(message) - size,
+		"%s%s%s  :  %s", tst_ttype2color(ttype), type, ANSI_COLOR_RESET, tmesg);
+	else
+		size += snprintf(message + size, sizeof(message) - size,
+		"%s  :  %s", type, tmesg);
 
 	if (size >= sizeof(message)) {
 		printf("%s: %i: line too long\n", __func__, __LINE__);
@@ -322,10 +347,10 @@ static void tst_print(const char *tcid, int tnum, int ttype, const char *tmesg)
 	}
 
 	if (ttype & TRERRNO) {
+		err = TEST_RETURN < 0 ? -(int)TEST_RETURN : (int)TEST_RETURN;
 		size += snprintf(message + size, sizeof(message) - size,
 				 ": TEST_RETURN=%s(%i): %s",
-				 tst_strerrno(TEST_RETURN), (int)TEST_RETURN,
-				 strerror(TEST_RETURN));
+				 tst_strerrno(err), err, strerror(err));
 	}
 
 	if (size + 1 >= sizeof(message)) {
@@ -375,9 +400,14 @@ void tst_exit(void)
 
 	pthread_mutex_lock(&tmutex);
 
-	tst_flush();
+	tst_old_flush();
 
-	exit(T_exitval & ~TINFO);
+	T_exitval &= ~TINFO;
+
+	if (T_exitval == TCONF && passed_cnt)
+		T_exitval &= ~TCONF;
+
+	exit(T_exitval);
 }
 
 pid_t tst_fork(void)
@@ -386,7 +416,7 @@ pid_t tst_fork(void)
 
 	NO_NEWLIB_ASSERT("Unknown", 0);
 
-	tst_flush();
+	tst_old_flush();
 
 	child = fork();
 	if (child == 0)
@@ -401,8 +431,7 @@ void tst_record_childstatus(void (*cleanup)(void), pid_t child)
 
 	NO_NEWLIB_ASSERT("Unknown", 0);
 
-	if (waitpid(child, &status, 0) < 0)
-		tst_brkm(TBROK | TERRNO, cleanup, "waitpid(%d) failed", child);
+	SAFE_WAITPID(cleanup, child, &status, 0);
 
 	if (WIFEXITED(status)) {
 		ttype_result = WEXITSTATUS(status);
@@ -432,7 +461,7 @@ pid_t tst_vfork(void)
 {
 	NO_NEWLIB_ASSERT("Unknown", 0);
 
-	tst_flush();
+	tst_old_flush();
 	return vfork();
 }
 

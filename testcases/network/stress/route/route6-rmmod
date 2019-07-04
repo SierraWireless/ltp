@@ -29,7 +29,7 @@
 #   by the removing network driver
 #
 # Setup:
-#   See ltp-yyyymmdd/testcases/network/stress/README
+#   See testcases/network/stress/README
 #
 # Author:
 #   Mitsuru Chinen <mitch@jp.ibm.com>
@@ -117,7 +117,7 @@ do_setup()
     # Check the local host has ethtool utility
     which ethtool >/dev/null
     if [ $? -ne 0 ]; then
-	tst_info TBROK "This test case requires ethtool utility"
+	tst_resm TBROK "This test case requires ethtool utility"
 	exit $TST_TOTAL
     fi
 

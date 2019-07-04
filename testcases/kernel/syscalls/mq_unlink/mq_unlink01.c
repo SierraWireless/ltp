@@ -25,6 +25,7 @@
 #include <mqueue.h>
 
 #include "tst_test.h"
+#include "tst_safe_posix_ipc.h"
 
 #define QUEUE_NAME	"/test_mqueue"
 
@@ -94,11 +95,7 @@ static void do_test(unsigned int i)
 	mq_unlink(QUEUE_NAME);
 
 	/* prepare */
-	fd = mq_open(QUEUE_NAME, O_CREAT | O_EXCL | O_RDWR, S_IRWXU, NULL);
-	if (fd == -1) {
-		tst_res(TBROK | TERRNO, "mq_open failed");
-		goto EXIT;
-	}
+	fd = SAFE_MQ_OPEN(QUEUE_NAME, O_CREAT | O_EXCL | O_RDWR, S_IRWXU, NULL);
 
 	if (tc->as_nobody && seteuid(pw->pw_uid)) {
 		tst_res(TBROK | TERRNO, "seteuid failed");
@@ -107,12 +104,12 @@ static void do_test(unsigned int i)
 
 	/* test */
 	TEST(mq_unlink(tc->qname));
-	if (TEST_ERRNO != tc->err || TEST_RETURN != tc->ret) {
+	if (TST_ERR != tc->err || TST_RET != tc->ret) {
 		tst_res(TFAIL | TTERRNO, "mq_unlink returned %ld, expected %d,"
-			" expected errno %s (%d)", TEST_RETURN,
+			" expected errno %s (%d)", TST_RET,
 			tc->ret, tst_strerrno(tc->err), tc->err);
 	} else {
-		tst_res(TPASS | TTERRNO, "mq_unlink returned %ld", TEST_RETURN);
+		tst_res(TPASS | TTERRNO, "mq_unlink returned %ld", TST_RET);
 	}
 
 EXIT:
@@ -127,7 +124,6 @@ EXIT:
 }
 
 static struct tst_test test = {
-	.tid = "mq_ulink01",
 	.tcnt = ARRAY_SIZE(tcase),
 	.test = do_test,
 	.needs_root = 1,

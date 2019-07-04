@@ -28,10 +28,11 @@
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
+#include <limits.h>
 
 #include "test.h"
 #include "safe_macros.h"
-#include "process_vm.h"
+#include "lapi/syscalls.h"
 
 char *TCID = "process_vm_readv03";
 int TST_TOTAL = 1;
@@ -50,7 +51,6 @@ static int nr_iovecs;
 static long bufsz;
 static int pipe_fd[2];
 static pid_t pids[2];
-static int semid;
 
 static void gen_random_arr(int *arr, int arr_sz);
 static void child_alloc(int *bufsz_arr);
@@ -71,8 +71,7 @@ int main(int argc, char **argv)
 	for (lc = 0; TEST_LOOPING(lc); lc++) {
 		tst_count = 0;
 
-		if (pipe(pipe_fd) < 0)
-			tst_brkm(TBROK | TERRNO, cleanup, "pipe");
+		SAFE_PIPE(cleanup, pipe_fd);
 
 		bufsz_arr = SAFE_MALLOC(cleanup, nr_iovecs * sizeof(int));
 		gen_random_arr(bufsz_arr, nr_iovecs);
@@ -98,16 +97,14 @@ int main(int argc, char **argv)
 		}
 
 		/* wait until child_invoke reads from child_alloc's VM */
-		if (waitpid(pids[1], &status, 0) == -1)
-			tst_brkm(TBROK | TERRNO, cleanup, "waitpid");
+		SAFE_WAITPID(cleanup, pids[1], &status, 0);
 		if (!WIFEXITED(status) || WEXITSTATUS(status) != 0)
 			tst_resm(TFAIL, "child 1 returns %d", status);
 
 		/* child_alloc is free to exit now */
-		safe_semop(semid, 0, 1);
+		TST_SAFE_CHECKPOINT_WAKE(cleanup, 0);
 
-		if (waitpid(pids[0], &status, 0) == -1)
-			tst_brkm(TBROK | TERRNO, cleanup, "waitpid");
+		SAFE_WAITPID(cleanup, pids[0], &status, 0);
 		if (!WIFEXITED(status) || WEXITSTATUS(status) != 0)
 			tst_resm(TFAIL, "child 0 returns %d", status);
 
@@ -155,11 +152,11 @@ static void child_alloc(int *bufsz_arr)
 	/* passing addr via pipe */
 	SAFE_CLOSE(tst_exit, pipe_fd[0]);
 	snprintf(buf, BUFSIZ, "%p", (void *)foo);
-	SAFE_WRITE(tst_exit, 1, pipe_fd[1], buf, strlen(buf));
+	SAFE_WRITE(tst_exit, 1, pipe_fd[1], buf, strlen(buf) + 1);
 	SAFE_CLOSE(tst_exit, pipe_fd[1]);
 
 	/* wait until child_invoke is done reading from our VM */
-	safe_semop(semid, 0, -1);
+	TST_SAFE_CHECKPOINT_WAIT(cleanup, 0);
 }
 
 static long *fetch_remote_addrs(void)
@@ -183,7 +180,8 @@ static long *fetch_remote_addrs(void)
 	remote.iov_base = foo;
 	remote.iov_len = len;
 
-	TEST(test_process_vm_readv(pids[0], &local, 1, &remote, 1, 0));
+	TEST(ltp_syscall(__NR_process_vm_readv, pids[0], &local,
+			 1, &remote, 1, 0));
 	if (TEST_RETURN != len)
 		tst_brkm(TFAIL | TERRNO, tst_exit, "process_vm_readv");
 
@@ -215,7 +213,7 @@ static void child_invoke(int *bufsz_arr)
 	tst_resm(TINFO, "child 1: %d local iovecs initialized.",
 		 NUM_LOCAL_VECS);
 
-	TEST(test_process_vm_readv(pids[0], local, NUM_LOCAL_VECS,
+	TEST(ltp_syscall(__NR_process_vm_readv, pids[0], local, NUM_LOCAL_VECS,
 				   remote, nr_iovecs, 0));
 	if (TEST_RETURN != bufsz)
 		tst_brkm(TBROK | TERRNO, tst_exit, "process_vm_readv");
@@ -249,15 +247,15 @@ static void setup(void)
 {
 	tst_require_root();
 
+	/* Just a sanity check of the existence of syscall */
+	ltp_syscall(__NR_process_vm_readv, getpid(), NULL, 0, NULL, 0, 0);
+
 	nr_iovecs = nflag ? SAFE_STRTOL(NULL, nr_opt, 1, IOV_MAX) : 10;
 	bufsz = sflag ? SAFE_STRTOL(NULL, sz_opt, NUM_LOCAL_VECS, LONG_MAX)
 	    : 100000;
 
-#if !defined(__NR_process_vm_readv)
-	tst_brkm(TCONF, NULL, "process_vm_readv does not exist "
-		 "on your system");
-#endif
-	semid = init_sem(1);
+	tst_tmpdir();
+	TST_CHECKPOINT_INIT(cleanup);
 	srand(time(NULL));
 
 	TEST_PAUSE;
@@ -265,7 +263,7 @@ static void setup(void)
 
 static void cleanup(void)
 {
-	clean_sem(semid);
+	tst_rmdir();
 }
 
 static void help(void)

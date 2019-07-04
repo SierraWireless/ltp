@@ -57,6 +57,7 @@
 #include <sys/mman.h>
 
 #include "test.h"
+#include "safe_macros.h"
 #include "compat_16.h"
 
 #define TEST_USER       "nobody"
@@ -73,12 +74,13 @@
 TCID_DEFINE(lchown02);
 int TST_TOTAL = 7;
 
+static void setup(void);
+static void cleanup(void);
 static void setup_eperm(int pos);
 static void setup_eacces(int pos);
 static void setup_enotdir(int pos);
 static void setup_longpath(int pos);
 static void setup_efault(int pos);
-static void setup_highaddress(int pos);
 
 static char path[PATH_MAX + 2];
 
@@ -92,7 +94,6 @@ struct test_case_t {
 static struct test_case_t test_cases[] = {
 	{SFILE1, "Process is not owner/root", EPERM, setup_eperm},
 	{SFILE2, "Search permission denied", EACCES, setup_eacces},
-	{NULL, "Address beyond address space", EFAULT, setup_highaddress},
 	{NULL, "Unaccessible address space", EFAULT, setup_efault},
 	{path, "Pathname too long", ENAMETOOLONG, setup_longpath},
 	{SFILE3, "Path contains regular file", ENOTDIR, setup_enotdir},
@@ -101,9 +102,6 @@ static struct test_case_t test_cases[] = {
 };
 
 static struct passwd *ltpuser;
-
-static void setup(void);
-static void cleanup(void);
 
 int main(int argc, char *argv[])
 {
@@ -199,16 +197,14 @@ static void setup_eperm(int pos LTP_ATTRIBUTE_UNUSED)
 	if ((fd = open(TEST_FILE1, O_RDWR | O_CREAT, 0666)) == -1)
 		tst_brkm(TBROK | TERRNO, cleanup, "open failed");
 
-	if (close(fd) == -1)
-		tst_brkm(TBROK | TERRNO, cleanup, "close failed");
+	SAFE_CLOSE(cleanup, fd);
 
 	/* become root once more */
 	if (seteuid(0) == -1)
 		tst_resm(TBROK | TERRNO, "setuid(0) failed");
 
 	/* create symling to testfile */
-	if (symlink(TEST_FILE1, SFILE1) < 0)
-		tst_brkm(TBROK | TERRNO, cleanup, "symlink failed");
+	SAFE_SYMLINK(cleanup, TEST_FILE1, SFILE1);
 
 	/* back to the user nobody */
 	if (seteuid(ltpuser->pw_uid) == -1)
@@ -229,27 +225,19 @@ static void setup_eacces(int pos LTP_ATTRIBUTE_UNUSED)
 	int fd;
 
 	/* create a test directory */
-	if (mkdir(DIR_TEMP, MODE_RWX) == -1)
-		tst_brkm(TBROK | TERRNO, cleanup, "mkdir failed");
+	SAFE_MKDIR(cleanup, DIR_TEMP, MODE_RWX);
 
 	/* create a file under test directory */
 	if ((fd = open(TEST_FILE2, O_RDWR | O_CREAT, 0666)) == -1)
 		tst_brkm(TBROK | TERRNO, cleanup, "open failed");
 
-	if (close(fd) == -1)
-		tst_brkm(TBROK | TERRNO, cleanup, "close failed");
+	SAFE_CLOSE(cleanup, fd);
 
 	/* create a symlink of testfile */
-	if (symlink(TEST_FILE2, SFILE2) < 0) {
-		tst_brkm(TBROK | TERRNO, cleanup, "symlink(2) %s to %s failed",
-			 TEST_FILE2, SFILE2);
-	}
+	SAFE_SYMLINK(cleanup, TEST_FILE2, SFILE2);
 
 	/* modify mode permissions on test directory */
-	if (chmod(DIR_TEMP, FILE_MODE) < 0) {
-		tst_brkm(TBROK | TERRNO, cleanup, "chmod(2) %s failed",
-			 DIR_TEMP);
-	}
+	SAFE_CHMOD(cleanup, DIR_TEMP, FILE_MODE);
 }
 
 /*
@@ -261,26 +249,7 @@ static void setup_eacces(int pos LTP_ATTRIBUTE_UNUSED)
  */
 static void setup_efault(int pos)
 {
-	char *bad_addr = 0;
-
-	bad_addr = mmap(NULL, 1, PROT_NONE,
-			MAP_PRIVATE_EXCEPT_UCLINUX | MAP_ANONYMOUS, -1, 0);
-
-	if (bad_addr == MAP_FAILED)
-		tst_brkm(TBROK | TERRNO, cleanup, "mmap failed");
-
-	test_cases[pos].pathname = bad_addr;
-}
-
-/*
- * setup_efault() -- setup for a test condition where lchown(2) returns -1 and
- *                   sets errno to EFAULT.
- *
- * Use ltp function get_high_address() to compute high address.
- */
-static void setup_highaddress(int pos)
-{
-	test_cases[pos].pathname = get_high_address();
+	test_cases[pos].pathname = tst_get_bad_addr(cleanup);
 }
 
 /*
@@ -298,9 +267,7 @@ static void setup_enotdir(int pos LTP_ATTRIBUTE_UNUSED)
 		tst_brkm(TBROK | TERRNO, cleanup, "open(2) %s failed", TFILE3);
 	}
 
-	if (close(fd) == -1) {
-		tst_brkm(TBROK | TERRNO, cleanup, "close(2) %s failed", TFILE3);
-	}
+	SAFE_CLOSE(cleanup, fd);
 }
 
 /*

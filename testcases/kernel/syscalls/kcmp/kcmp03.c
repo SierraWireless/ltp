@@ -67,12 +67,12 @@ static int do_child(void *arg)
 	pid2 = getpid();
 
 	TEST(kcmp(pid1, pid2, *(int *)arg, 0, 0));
-	if (TEST_RETURN == -1) {
+	if (TST_RET == -1) {
 		tst_res(TFAIL | TTERRNO, "kcmp() failed unexpectedly");
 		return 0;
 	}
 
-	if (TEST_RETURN == 0)
+	if (TST_RET == 0)
 		tst_res(TPASS, "kcmp() returned the expected value");
 	else
 		tst_res(TFAIL, "kcmp() returned the unexpected value");
@@ -95,7 +95,6 @@ static void verify_kcmp(unsigned int n)
 }
 
 static struct tst_test test = {
-	.tid = "kcmp03",
 	.tcnt = ARRAY_SIZE(tcases),
 	.setup = setup,
 	.cleanup = cleanup,

@@ -8,6 +8,8 @@ core
 .gdb_history
 .gdbinit
 lib*.a
+.cache.mk
+*.dwo
 
 /aclocal.m4
 autom4te.cache
@@ -19,6 +21,7 @@ autom4te.cache
 /config.mk
 /config.status
 /config.sub
+/conf*/
 /install-sh
 /missing
 /include/config.h
@@ -30,6 +33,7 @@ autom4te.cache
 /execltp
 /ltp-devel.spec
 /README.ltp-devel
+/tags
 /Version
 /include/mk/config.mk
 /include/mk/config-openposix.mk
@@ -39,6 +43,9 @@ autom4te.cache
 /pan/ltp-bump
 /pan/ltp-pan
 /pan/ltp-scanner
+
+cscope.*
+ncscope.*
 
 .dep_modules
 .gitattributes
@@ -55,7 +62,6 @@ patches/
 logfile.*
 
 /utils/benchmark/ebizzy-0.3/ebizzy
-/lib/tests/bytes_by_prefix_test
 /lib/tests/tst_tmpdir_test
 /lib/tests/tst_checkpoint
 /lib/tests/tst_checkpoint_wait_timeout

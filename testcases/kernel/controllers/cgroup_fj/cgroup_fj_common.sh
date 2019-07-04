@@ -83,6 +83,7 @@ create_subgroup()
 setup()
 {
     tst_require_root
+    tst_test_cmds killall
 
     if [ ! -f /proc/cgroups ]; then
         tst_brkm TCONF "Kernel does not support for control groups"
@@ -93,7 +94,8 @@ setup()
     tst_tmpdir
     TST_CLEANUP=cleanup
 
-    mount_point=`grep -w $subsystem /proc/mounts | cut -f 2 | cut -d " " -f2`
+    mount_point=`grep -w $subsystem /proc/mounts | grep -w "cgroup" | \
+	cut -f 2 | cut -d " " -f2`
 
     if [ -z "$mount_point" ]; then
         try_umount=1

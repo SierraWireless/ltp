@@ -38,6 +38,7 @@
 #include <pwd.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <paths.h>
 #include "tst_test.h"
 
 #define FNAME_F	"file_f"
@@ -74,7 +75,7 @@ static void access_test(struct tcase *tc, const char *user)
 
 	TEST(access(tc->pathname, tc->mode));
 
-	if (TEST_RETURN == -1) {
+	if (TST_RET == -1) {
 		tst_res(TFAIL | TTERRNO, "access(%s, %s) as %s failed",
 			tc->pathname, tc->name, user);
 		return;
@@ -89,7 +90,7 @@ static void access_test(struct tcase *tc, const char *user)
 		 */
 		TEST(stat(tc->targetname, &stat_buf));
 
-		if (TEST_RETURN == -1) {
+		if (TST_RET == -1) {
 			tst_res(TFAIL | TTERRNO, "stat(%s) as %s failed",
 				tc->targetname, user);
 			return;
@@ -104,14 +105,14 @@ static void access_test(struct tcase *tc, const char *user)
 		 */
 		TEST(open(tc->targetname, O_RDONLY));
 
-		if (TEST_RETURN == -1) {
+		if (TST_RET == -1) {
 			tst_res(TFAIL | TTERRNO,
 				"open %s with O_RDONLY as %s failed",
 				tc->targetname, user);
 			return;
 		}
 
-		SAFE_CLOSE(TEST_RETURN);
+		SAFE_CLOSE(TST_RET);
 
 		break;
 	case W_OK:
@@ -122,14 +123,14 @@ static void access_test(struct tcase *tc, const char *user)
 		 */
 		TEST(open(tc->targetname, O_WRONLY));
 
-		if (TEST_RETURN == -1) {
+		if (TST_RET == -1) {
 			tst_res(TFAIL | TTERRNO,
 				"open %s with O_WRONLY as %s failed",
 				tc->targetname, user);
 			return;
 		}
 
-		SAFE_CLOSE(TEST_RETURN);
+		SAFE_CLOSE(TST_RET);
 
 		break;
 	case X_OK:
@@ -142,7 +143,7 @@ static void access_test(struct tcase *tc, const char *user)
 
 		TEST(system(command));
 
-		if (TEST_RETURN != 0) {
+		if (TST_RET != 0) {
 			tst_res(TFAIL | TTERRNO, "execute %s as %s failed",
 				tc->targetname, user);
 			return;
@@ -187,6 +188,7 @@ static void setup(void)
 	SAFE_TOUCH(FNAME_R, 0444, NULL);
 	SAFE_TOUCH(FNAME_W, 0222, NULL);
 	SAFE_TOUCH(FNAME_X, 0555, NULL);
+	SAFE_FILE_PRINTF(FNAME_X, "#!%s\n", _PATH_BSHELL);
 
 	SAFE_SYMLINK(FNAME_F, SNAME_F);
 	SAFE_SYMLINK(FNAME_R, SNAME_R);
@@ -195,7 +197,6 @@ static void setup(void)
 }
 
 static struct tst_test test = {
-	.tid = "access02",
 	.tcnt = ARRAY_SIZE(tcases),
 	.needs_tmpdir = 1,
 	.needs_root = 1,

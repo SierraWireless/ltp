@@ -22,6 +22,7 @@
  * the current process, process group or user.
  */
 
+#define _GNU_SOURCE
 #include <errno.h>
 #include <pwd.h>
 #include <stdlib.h>
@@ -30,7 +31,7 @@
 #include "tst_test.h"
 
 static const char *username = "ltp_setpriority01";
-static int pid, uid;
+static int pid, uid, user_added;
 
 static struct tcase {
 	int which;
@@ -63,7 +64,7 @@ static void setpriority_test(struct tcase *tc)
 	for (new_prio = -20; new_prio < 20; new_prio++) {
 		TEST(setpriority(tc->which, *tc->who, new_prio));
 
-		if (TEST_RETURN != 0) {
+		if (TST_RET != 0) {
 			tst_res(TFAIL | TTERRNO,
 				"setpriority(%d, %d, %d) failed",
 				tc->which, *tc->who, new_prio);
@@ -115,7 +116,11 @@ static void setup(void)
 	const char *const cmd_useradd[] = {"useradd", username, NULL};
 	struct passwd *ltpuser;
 
+	if (eaccess("/etc/passwd", W_OK))
+		tst_brk(TCONF, "/etc/passwd is not accessible");
+
 	tst_run_cmd(cmd_useradd, NULL, NULL, 0);
+	user_added = 1;
 
 	ltpuser = SAFE_GETPWNAM(username);
 	uid = ltpuser->pw_uid;
@@ -123,6 +128,9 @@ static void setup(void)
 
 static void cleanup(void)
 {
+	if (!user_added)
+		return;
+
 	const char *const cmd_userdel[] = {"userdel", "-r", username, NULL};
 
 	if (tst_run_cmd(cmd_userdel, NULL, NULL, 1))
@@ -130,7 +138,6 @@ static void cleanup(void)
 }
 
 static struct tst_test test = {
-	.tid = "setpriority01",
 	.tcnt = ARRAY_SIZE(tcases),
 	.needs_root = 1,
 	.forks_child = 1,

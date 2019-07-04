@@ -34,6 +34,7 @@
 #include <pwd.h>
 
 #include "tst_test.h"
+#include "tst_safe_sysv_ipc.h"
 #include "libnewipc.h"
 
 static key_t msgkey, msgkey1;
@@ -59,12 +60,12 @@ static void verify_msgget(struct tcase *tc)
 {
 	TEST(msgget(*tc->key, tc->flags));
 
-	if (TEST_RETURN != -1) {
+	if (TST_RET != -1) {
 		tst_res(TFAIL, "msgget() succeeded unexpectedly");
 		return;
 	}
 
-	if (TEST_ERRNO == tc->exp_err) {
+	if (TST_ERR == tc->exp_err) {
 		tst_res(TPASS | TTERRNO, "msgget() failed as expected");
 	} else {
 		tst_res(TFAIL | TTERRNO, "msgget() failed unexpectedly,"
@@ -96,23 +97,18 @@ static void setup(void)
 	msgkey = GETIPCKEY();
 	msgkey1 = GETIPCKEY();
 
-	queue_id = msgget(msgkey, IPC_CREAT | IPC_EXCL);
-	if (queue_id == -1)
-		tst_brk(TBROK | TERRNO, "can't create message queue");
+	queue_id = SAFE_MSGGET(msgkey, IPC_CREAT | IPC_EXCL);
 
 	pw = SAFE_GETPWNAM("nobody");
 }
 
 static void cleanup(void)
 {
-	if (queue_id != -1 && msgctl(queue_id, IPC_RMID, NULL)) {
-		tst_res(TWARN | TERRNO, "failed to delete message queue %i",
-			queue_id);
-	}
+	if (queue_id != -1)
+		SAFE_MSGCTL(queue_id, IPC_RMID, NULL);
 }
 
 static struct tst_test test = {
-	.tid = "msgget02",
 	.needs_tmpdir = 1,
 	.needs_root = 1,
 	.forks_child = 1,

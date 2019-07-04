@@ -87,6 +87,7 @@
 #include <pwd.h>
 
 #include "test.h"
+#include "safe_macros.h"
 
 #define MODE_RWX        S_IRWXU | S_IRWXG | S_IRWXO
 #define FILE_MODE       S_IRUSR | S_IRGRP | S_IROTH
@@ -101,8 +102,6 @@
 
 char *TCID = "symlink03";
 int TST_TOTAL = 1;
-
-char *bad_addr = 0;
 
 int no_setup();
 int setup1();			/* setup function to test symlink for EACCES */
@@ -120,18 +119,11 @@ struct test_case_t {		/* test case struct. to hold ref. test cond's */
 	int exp_errno;
 	int (*setupfunc) ();
 } Test_cases[] = {
-	{
-	TEST_FILE1, SYM_FILE1, "No Search permissions to process",
+	{TEST_FILE1, SYM_FILE1, "No Search permissions to process",
 		    EACCES, setup1}, {
 	TEST_FILE2, SYM_FILE2, "Specified symlink already exists",
-		    EEXIST, setup2},
-#if !defined(UCLINUX)
-	{
-	TESTFILE, High_address_node, "Address beyond address space",
-		    EFAULT, no_setup},
-#endif
-	{
-	TESTFILE, (char *)-1, "Negative address", EFAULT, no_setup}, {
+		    EEXIST, setup2}, {
+	TESTFILE, NULL, "Invalid address", EFAULT, no_setup}, {
 	TESTFILE, Longpathname, "Symlink path too long", ENAMETOOLONG,
 		    longpath_setup}, {
 	TESTFILE, "", "Symlink Pathname is empty", ENOENT, no_setup}, {
@@ -170,11 +162,7 @@ int main(int ac, char **av)
 			test_file = Test_cases[ind].file;
 			sym_file = Test_cases[ind].link;
 			test_desc = Test_cases[ind].desc;
-#if !defined(UCLINUX)
-			if (sym_file == High_address_node) {
-				sym_file = (char *)get_high_address();
-			}
-#endif
+
 			/*
 			 * Call symlink(2) to test different test conditions.
 			 * verify that it fails with -1 return value and sets
@@ -240,17 +228,10 @@ void setup(void)
 
 	tst_tmpdir();
 
-#if !defined(UCLINUX)
-	bad_addr = mmap(0, 1, PROT_NONE,
-			MAP_PRIVATE_EXCEPT_UCLINUX | MAP_ANONYMOUS, 0, 0);
-	if (bad_addr == MAP_FAILED) {
-		tst_brkm(TBROK, cleanup, "mmap failed");
-	}
-	Test_cases[3].link = bad_addr;
-#endif
-
 	/* call individual setup functions */
 	for (ind = 0; Test_cases[ind].desc != NULL; ind++) {
+		if (!Test_cases[ind].link)
+			Test_cases[ind].link = tst_get_bad_addr(cleanup);
 		Test_cases[ind].setupfunc();
 	}
 }
@@ -281,25 +262,17 @@ int setup1(void)
 {
 	int fd;			/* file handle for testfile */
 
-	if (mkdir(DIR_TEMP, MODE_RWX) < 0) {
-		tst_brkm(TBROK, cleanup, "mkdir(2) of %s failed", DIR_TEMP);
-	}
+	SAFE_MKDIR(cleanup, DIR_TEMP, MODE_RWX);
 
 	if ((fd = open(TEST_FILE1, O_RDWR | O_CREAT, 0666)) == -1) {
 		tst_brkm(TBROK, cleanup,
 			 "open(%s, O_RDWR|O_CREAT, 0666) failed, errno=%d : %s",
 			 TEST_FILE1, errno, strerror(errno));
 	}
-	if (close(fd) == -1) {
-		tst_brkm(TBROK, cleanup,
-			 "close(%s) Failed, errno=%d : %s",
-			 TEST_FILE1, errno, strerror(errno));
-	}
+	SAFE_CLOSE(cleanup, fd);
 
 	/* Modify mode permissions on test directory */
-	if (chmod(DIR_TEMP, FILE_MODE) < 0) {
-		tst_brkm(TBROK, cleanup, "chmod(2) of %s failed", DIR_TEMP);
-	}
+	SAFE_CHMOD(cleanup, DIR_TEMP, FILE_MODE);
 	return 0;
 }
 
@@ -316,17 +289,9 @@ int setup2(void)
 			 "open(%s, O_RDWR|O_CREAT, 0666) failed, errno=%d : %s",
 			 TEST_FILE1, errno, strerror(errno));
 	}
-	if (close(fd) == -1) {
-		tst_brkm(TBROK, cleanup,
-			 "close(%s) Failed, errno=%d : %s",
-			 TEST_FILE2, errno, strerror(errno));
-	}
+	SAFE_CLOSE(cleanup, fd);
 
-	if (symlink(TEST_FILE2, SYM_FILE2) < 0) {
-		tst_brkm(TBROK, cleanup,
-			 "symlink() Fails to create %s in setup2, error=%d",
-			 SYM_FILE2, errno);
-	}
+	SAFE_SYMLINK(cleanup, TEST_FILE2, SYM_FILE2);
 	return 0;
 }
 
@@ -365,10 +330,7 @@ int setup3(void)
 			 "open(2) on t_file failed, errno=%d : %s",
 			 errno, strerror(errno));
 	}
-	if (close(fd) == -1) {
-		tst_brkm(TBROK, cleanup, "close(t_file) Failed, errno=%d : %s",
-			 errno, strerror(errno));
-	}
+	SAFE_CLOSE(cleanup, fd);
 	return 0;
 }
 
@@ -383,9 +345,7 @@ void cleanup(void)
 {
 
 	/* Restore mode permissions on test directory created in setup2() */
-	if (chmod(DIR_TEMP, MODE_RWX) < 0) {
-		tst_brkm(TBROK, NULL, "chmod(2) of %s failed", DIR_TEMP);
-	}
+	SAFE_CHMOD(NULL, DIR_TEMP, MODE_RWX);
 
 	tst_rmdir();
 

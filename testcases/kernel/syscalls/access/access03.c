@@ -49,13 +49,13 @@ static void access_test(struct tcase *tc, const char *user)
 {
 	TEST(access(tc->addr, tc->mode));
 
-	if (TEST_RETURN != -1) {
+	if (TST_RET != -1) {
 		tst_res(TFAIL, "access(%p, %s) as %s succeeded unexpectedly",
 			tc->addr, tc->name, user);
 		return;
 	}
 
-	if (TEST_ERRNO != EFAULT) {
+	if (TST_ERR != EFAULT) {
 		tst_res(TFAIL | TTERRNO,
 			"access(%p, %s) as %s should fail with EFAULT",
 			tc->addr, tc->name, user);
@@ -94,7 +94,6 @@ static void setup(void)
 }
 
 static struct tst_test test = {
-	.tid = "access03",
 	.tcnt = ARRAY_SIZE(tcases),
 	.needs_root = 1,
 	.forks_child = 1,

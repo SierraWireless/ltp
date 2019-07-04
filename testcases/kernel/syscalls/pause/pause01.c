@@ -29,9 +29,9 @@ static void do_child(void)
 	TST_CHECKPOINT_WAKE(0);
 
 	TEST(pause());
-	if (TEST_RETURN != -1)
+	if (TST_RET != -1)
 		tst_res(TFAIL, "pause() succeeded unexpectedly");
-	else if (TEST_ERRNO == EINTR)
+	else if (TST_ERR == EINTR)
 		tst_res(TPASS, "pause() interrupted with EINTR");
 	else
 		tst_res(TFAIL | TTERRNO, "pause() unexpected errno");
@@ -61,7 +61,6 @@ static void do_test(void)
 }
 
 static struct tst_test test = {
-	.tid = "pause01",
 	.forks_child = 1,
 	.needs_checkpoints = 1,
 	.test_all = do_test,

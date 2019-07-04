@@ -252,7 +252,7 @@ static struct tcase {
 
 static void verify_success(struct tcase *tc, const char *user)
 {
-	if (TEST_RETURN == -1) {
+	if (TST_RET == -1) {
 		tst_res(TFAIL | TTERRNO,
 		        "access(%s, %s) as %s failed unexpectedly",
 		        tc->fname, tc->name, user);
@@ -264,13 +264,13 @@ static void verify_success(struct tcase *tc, const char *user)
 
 static void verify_failure(struct tcase *tc, const char *user)
 {
-	if (TEST_RETURN != -1) {
+	if (TST_RET != -1) {
 		tst_res(TFAIL, "access(%s, %s) as %s succeded unexpectedly",
 		        tc->fname, tc->name, user);
 		return;
 	}
 
-	if (TEST_ERRNO != tc->exp_errno) {
+	if (TST_ERR != tc->exp_errno) {
 		tst_res(TFAIL | TTERRNO,
 		        "access(%s, %s) as %s should fail with %s",
 		        tc->fname, tc->name, user,
@@ -315,6 +315,8 @@ static void setup(void)
 {
 	struct passwd *pw;
 
+	umask(0022);
+
 	pw = SAFE_GETPWNAM("nobody");
 
 	uid = pw->pw_uid;
@@ -357,7 +359,6 @@ static void setup(void)
 }
 
 static struct tst_test test = {
-	.tid = "access01",
 	.needs_tmpdir = 1,
 	.needs_root = 1,
 	.forks_child = 1,

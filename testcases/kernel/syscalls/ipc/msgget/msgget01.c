@@ -28,6 +28,7 @@
 #include <sys/msg.h>
 
 #include "tst_test.h"
+#include "tst_safe_sysv_ipc.h"
 #include "libnewipc.h"
 
 static int queue_id = -1;
@@ -41,18 +42,16 @@ static struct buf {
 static void verify_msgget(void)
 {
 	TEST(msgget(msgkey, IPC_CREAT | MSG_RW));
-	if (TEST_RETURN == -1) {
+	if (TST_RET == -1) {
 		tst_res(TFAIL | TTERRNO, "msgget() failed");
 		return;
 	}
 
-	queue_id = TEST_RETURN;
+	queue_id = TST_RET;
 
-	if (msgsnd(queue_id, &snd_buf, MSGSIZE, 0) == -1)
-		tst_brk(TBROK | TERRNO, "msgsnd() failed");
+	SAFE_MSGSND(queue_id, &snd_buf, MSGSIZE, 0);
 
-	if (msgrcv(queue_id, &rcv_buf, MSGSIZE, MSGTYPE, IPC_NOWAIT) == -1)
-		tst_brk(TBROK | TERRNO, "msgrcv() failed");
+	SAFE_MSGRCV(queue_id, &rcv_buf, MSGSIZE, MSGTYPE, IPC_NOWAIT);
 
 	if (strcmp(snd_buf.text, rcv_buf.text) == 0)
 		tst_res(TPASS, "message received = message sent");
@@ -67,14 +66,11 @@ static void setup(void)
 
 static void cleanup(void)
 {
-	if (queue_id != -1 && msgctl(queue_id, IPC_RMID, NULL)) {
-		tst_res(TWARN | TERRNO, "failed to delete message queue %i",
-			queue_id);
-	}
+	if (queue_id != -1)
+		SAFE_MSGCTL(queue_id, IPC_RMID, NULL);
 }
 
 static struct tst_test test = {
-	.tid = "msgget01",
 	.setup = setup,
 	.cleanup = cleanup,
 	.test_all = verify_msgget,

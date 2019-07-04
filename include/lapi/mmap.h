@@ -67,4 +67,21 @@
 # define MADV_DODUMP   17
 #endif
 
+#ifndef MADV_FREE
+# define MADV_FREE	8
+#endif
+
+#ifndef MADV_WIPEONFORK
+# define MADV_WIPEONFORK 18
+# define MADV_KEEPONFORK 19
+#endif
+
+#ifdef HAVE_SYS_SHM_H
+# include <sys/shm.h>
+# define MMAP_GRANULARITY SHMLBA
+#else
+# include <unistd.h>
+# define MMAP_GRANULARITY getpagesize()
+#endif /* HAVE_SYS_SHM_H */
+
 #endif /* LAPI_MMAP_H__ */

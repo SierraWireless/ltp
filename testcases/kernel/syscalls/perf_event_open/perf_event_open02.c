@@ -64,6 +64,7 @@ The -v flag makes it print out the values of each counter.
 #include <sys/prctl.h>
 #include <sys/types.h>
 #include <linux/types.h>
+#include <sched.h>
 
 #if HAVE_PERF_EVENT_ATTR
 # include <linux/perf_event.h>
@@ -71,7 +72,7 @@ The -v flag makes it print out the values of each counter.
 
 #include "test.h"
 #include "safe_macros.h"
-#include "linux_syscall_numbers.h"
+#include "lapi/syscalls.h"
 
 char *TCID = "perf_event_open02";
 int TST_TOTAL = 1;
@@ -160,8 +161,8 @@ static int count_hardware_counters(void)
 	for (i = 0; i < MAX_CTRS; i++) {
 		fdarry[i] = perf_event_open(&hw_event, 0, -1, -1, 0);
 		if (fdarry[i] == -1) {
-			if (errno == ENOENT) {
-				tst_brkm(TCONF, cleanup,
+			if (errno == ENOENT || errno == ENODEV) {
+				tst_brkm(TCONF | TERRNO, cleanup,
 				         "PERF_COUNT_HW_INSTRUCTIONS not supported");
 			}
 			tst_brkm(TBROK | TERRNO, cleanup,
@@ -286,6 +287,12 @@ static void verify(void)
 	unsigned long long vtsum = 0, vhsum = 0;
 	int i;
 	double ratio;
+	struct sched_param sparam = {.sched_priority = 1};
+
+	if (sched_setscheduler(0, SCHED_FIFO, &sparam)) {
+		tst_brkm(TBROK | TERRNO, cleanup,
+			 "sched_setscheduler(0, SCHED_FIFO, ...) failed");
+	}
 
 	if (prctl(PR_TASK_PERF_EVENTS_ENABLE) == -1) {
 		tst_brkm(TBROK | TERRNO, cleanup,
@@ -297,6 +304,12 @@ static void verify(void)
 	if (prctl(PR_TASK_PERF_EVENTS_DISABLE) == -1) {
 		tst_brkm(TBROK | TERRNO, cleanup,
 			 "prctl(PR_TASK_PERF_EVENTS_DISABLE) failed");
+	}
+
+	sparam.sched_priority = 0;
+	if (sched_setscheduler(0, SCHED_OTHER, &sparam)) {
+		tst_brkm(TBROK | TERRNO, cleanup,
+			 "sched_setscheduler(0, SCHED_OTHER, ...) failed");
 	}
 
 	if (read(tsk0, &vt0, sizeof(vt0)) != sizeof(vt0)) {

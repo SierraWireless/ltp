@@ -41,13 +41,15 @@
 #define LOOP_CONTROL_FILE "/dev/loop-control"
 
 #define DEV_FILE "test_dev.img"
+#define DEV_SIZE_MB 256u
 
 static char dev_path[1024];
 static int device_acquired;
 
 static const char *dev_variants[] = {
 	"/dev/loop%i",
-	"/dev/loop/%i"
+	"/dev/loop/%i",
+	"/dev/block/loop%i"
 };
 
 static int set_dev_path(int dev)
@@ -129,35 +131,60 @@ static int find_free_loopdev(void)
 	return 1;
 }
 
-static void attach_device(void (*cleanup_fn)(void),
-                          const char *dev, const char *file)
+static int attach_device(const char *dev, const char *file)
 {
-	int dev_fd, file_fd, err;
+	int dev_fd, file_fd;
+	struct loop_info loopinfo;
 
-	dev_fd = SAFE_OPEN(cleanup_fn, dev, O_RDWR);
-	file_fd = SAFE_OPEN(cleanup_fn, file, O_RDWR);
+	dev_fd = open(dev, O_RDWR);
+	if (dev_fd < 0) {
+		tst_resm(TWARN | TERRNO, "open('%s', O_RDWR) failed", dev);
+		return 1;
+	}
+
+	file_fd = open(file, O_RDWR);
+	if (file_fd < 0) {
+		tst_resm(TWARN | TERRNO, "open('%s', O_RDWR) failed", file);
+		close(dev_fd);
+		return 1;
+	}
 
 	if (ioctl(dev_fd, LOOP_SET_FD, file_fd) < 0) {
-		err = errno;
 		close(dev_fd);
 		close(file_fd);
-		tst_brkm(TBROK, cleanup_fn,
-		         "ioctl(%s, LOOP_SET_FD, %s) failed: %s",
-			 dev, file, tst_strerrno(err));
+		tst_resm(TWARN | TERRNO, "ioctl(%s, LOOP_SET_FD, %s) failed",
+			 dev, file);
+		return 1;
+	}
+
+	/* Old mkfs.btrfs use LOOP_GET_STATUS instead of backing_file to get
+	 * associated filename, so we need to set up the device by calling
+	 * LOOP_SET_FD and LOOP_SET_STATUS.
+	 */
+	memset(&loopinfo, 0, sizeof(loopinfo));
+	strcpy(loopinfo.lo_name, file);
+
+	if (ioctl(dev_fd, LOOP_SET_STATUS, &loopinfo)) {
+		close(dev_fd);
+		close(file_fd);
+		tst_resm(TWARN | TERRNO,
+			 "ioctl(%s, LOOP_SET_STATUS, %s) failed", dev, file);
+		return 1;
 	}
 
 	close(dev_fd);
 	close(file_fd);
+	return 0;
 }
 
-static void detach_device(const char *dev)
+static int detach_device(const char *dev)
 {
 	int dev_fd, ret, i;
 
 	dev_fd = open(dev, O_RDONLY);
 	if (dev_fd < 0) {
 		tst_resm(TWARN | TERRNO, "open(%s) failed", dev);
-		return;
+		return 1;
 	}
 
 	/* keep trying to clear LOOPDEV until we get ENXIO, a quick succession
@@ -167,13 +194,15 @@ static void detach_device(const char *dev)
 
 		if (ret && (errno == ENXIO)) {
 			close(dev_fd);
-			return;
+			return 0;
 		}
 
 		if (ret && (errno != EBUSY)) {
 			tst_resm(TWARN,
 				 "ioctl(%s, LOOP_CLR_FD, 0) unexpectedly failed with: %s",
 				 dev, tst_strerrno(errno));
+			close(dev_fd);
+			return 1;
 		}
 
 		usleep(50000);
@@ -182,9 +211,10 @@ static void detach_device(const char *dev)
 	close(dev_fd);
 	tst_resm(TWARN,
 		"ioctl(%s, LOOP_CLR_FD, 0) no ENXIO for too long", dev);
+	return 1;
 }
 
-const char *tst_acquire_device_(void (cleanup_fn)(void), unsigned int size)
+const char *tst_acquire_device__(unsigned int size)
 {
 	int fd;
 	char *dev;
@@ -192,75 +222,120 @@ const char *tst_acquire_device_(void (cleanup_fn)(void), unsigned int size)
 	unsigned int acq_dev_size;
 	uint64_t ltp_dev_size;
 
-	acq_dev_size = size > 150 ? size : 150;
-
-	if (device_acquired)
-		tst_brkm(TBROK, cleanup_fn, "Device allready acquired");
-
-	if (!tst_tmpdir_created()) {
-		tst_brkm(TBROK, cleanup_fn,
-		         "Cannot acquire device without tmpdir() created");
-	}
+	acq_dev_size = MAX(size, DEV_SIZE_MB);
 
 	dev = getenv("LTP_DEV");
 
 	if (dev) {
 		tst_resm(TINFO, "Using test device LTP_DEV='%s'", dev);
 
-		SAFE_STAT(cleanup_fn, dev, &st);
+		if (stat(dev, &st)) {
+			tst_resm(TWARN | TERRNO, "stat() failed");
+			return NULL;
+		}
 
 		if (!S_ISBLK(st.st_mode)) {
-			tst_brkm(TBROK, cleanup_fn,
-			         "%s is not a block device", dev);
+			tst_resm(TWARN, "%s is not a block device", dev);
+			return NULL;
 		}
 
-		fd = SAFE_OPEN(cleanup_fn, dev, O_RDONLY);
-		SAFE_IOCTL(cleanup_fn, fd, BLKGETSIZE64, &ltp_dev_size);
-		SAFE_CLOSE(cleanup_fn, fd);
+		fd = open(dev, O_RDONLY);
+		if (fd < 0) {
+			tst_resm(TWARN | TERRNO,
+				 "open(%s, O_RDONLY) failed", dev);
+			return NULL;
+		}
+
+		if (ioctl(fd, BLKGETSIZE64, &ltp_dev_size)) {
+			tst_resm(TWARN | TERRNO,
+				 "ioctl(fd, BLKGETSIZE64, ...) failed");
+			close(fd);
+			return NULL;
+		}
+
+		if (close(fd)) {
+			tst_resm(TWARN | TERRNO,
+				 "close(fd) failed");
+			return NULL;
+		}
+
 		ltp_dev_size = ltp_dev_size/1024/1024;
 
-		if (acq_dev_size <= ltp_dev_size) {
-			if (tst_fill_file(dev, 0, 1024, 512)) {
-				tst_brkm(TBROK | TERRNO, cleanup_fn,
-					"Failed to clear the first 512k of %s", dev);
-			}
-
+		if (acq_dev_size <= ltp_dev_size)
 			return dev;
-		}
 
 		tst_resm(TINFO, "Skipping $LTP_DEV size %"PRIu64"MB, requested size %uMB",
 				ltp_dev_size, acq_dev_size);
 	}
 
-	if (tst_fill_file(DEV_FILE, 0, 1024, 1024 * acq_dev_size)) {
-		tst_brkm(TBROK | TERRNO, cleanup_fn,
-		         "Failed to create " DEV_FILE);
-
+	if (tst_fill_file(DEV_FILE, 0, 1024 * 1024, acq_dev_size)) {
+		tst_resm(TWARN | TERRNO, "Failed to create " DEV_FILE);
+		return NULL;
 	}
 
 	if (find_free_loopdev())
 		return NULL;
 
-	attach_device(cleanup_fn, dev_path, DEV_FILE);
+	if (attach_device(dev_path, DEV_FILE))
+		return NULL;
 
 	device_acquired = 1;
 
 	return dev_path;
 }
 
-void tst_release_device(const char *dev)
+const char *tst_acquire_device_(void (cleanup_fn)(void), unsigned int size)
 {
-	if (getenv("LTP_DEV"))
-		return;
+	const char *device;
+
+	if (device_acquired) {
+		tst_brkm(TBROK, cleanup_fn, "Device already acquired");
+		return NULL;
+	}
+
+	if (!tst_tmpdir_created()) {
+		tst_brkm(TBROK, cleanup_fn,
+		         "Cannot acquire device without tmpdir() created");
+		return NULL;
+	}
+
+	device = tst_acquire_device__(size);
+
+	if (!device) {
+		tst_brkm(TBROK, cleanup_fn, "Failed to acquire device");
+		return NULL;
+	}
+
+	return device;
+}
+
+int tst_release_device(const char *dev)
+{
+	int ret;
+
+	if (!device_acquired)
+		return 0;
 
 	/*
-	 * Loop device was created -> we need to deatch it.
+	 * Loop device was created -> we need to detach it.
 	 *
 	 * The file image is deleted in tst_rmdir();
 	 */
-	detach_device(dev);
+	ret = detach_device(dev);
 
 	device_acquired = 0;
+
+	return ret;
+}
+
+int tst_clear_device(const char *dev)
+{
+	if (tst_fill_file(dev, 0, 1024, 512)) {
+		tst_resm(TWARN, "Failed to clear 512k block on %s", dev);
+		return 1;
+	}
+
+	return 0;
 }
 
 int tst_umount(const char *path)

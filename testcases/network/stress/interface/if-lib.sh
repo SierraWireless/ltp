@@ -1,5 +1,5 @@
 #!/bin/sh
-# Copyright (c) 2015 Oracle and/or its affiliates. All Rights Reserved.
+# Copyright (c) 2018 Petr Vorel <pvorel@suse.cz>
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License as
@@ -12,52 +12,46 @@
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with this program. If not, see <http://www.gnu.org/licenses/>.
+# along with this program; if not, write the Free Software Foundation,
+# Inc.,  51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #
-# Author: Alexey Kodanev <alexey.kodanev@oracle.com>
+# Author: Petr Vorel <pvorel@suse.cz>
 
-TST_CLEANUP="cleanup"
-
-. test_net.sh
-
-ipver=${TST_IPV6:-4}
-
-IPV4_NET16_UNUSED=${IPV4_NET16_UNUSED:-"10.23"}
-IPV6_NET32_UNUSED=${IPV6_NET32_UNUSED:-"fd00:23"}
-
-setup()
+if_usage()
 {
-	tst_require_root
-	tst_check_cmds ip pgrep pkill
-	trap "tst_brkm TBROK 'test interrupted'" INT
+	echo "-c      Test command (ip, $IF_CMD)"
 }
 
-cleanup()
+if_parse_args()
 {
-	# Stop the background TCP traffic
-	pkill -13 -x netstress
-	tst_rhost_run -c "pkill -13 -x netstress"
-	tst_restore_ipaddr
+	case $1 in
+	c) CMD="$2";;
+	esac
 }
 
-make_background_tcp_traffic()
+if_setup()
 {
-	port=$(tst_get_unused_port ipv${ipver} stream)
-	netstress -R 3 -g $port > /dev/null 2>&1 &
-	tst_rhost_run -b -c "netstress -l -H $(tst_ipaddr) -g $port"
-}
-
-check_connectivity()
-{
-	local cnt=$1
-	[ $CHECK_INTERVAL -eq 0 ] && return
-	[ $(($cnt % $CHECK_INTERVAL)) -ne 0 ] && return
-
-	tst_resm TINFO "check connectivity through $(tst_iface) on step $cnt"
-	check_icmpv${ipver}_connectivity $(tst_iface) $(tst_ipaddr rhost)
-	if [ $? -ne 0 ]; then
-		tst_resm TFAIL "$(tst_iface) is broken"
-		return 1
+	[ -n "$CMD" ] || tst_brk TBROK "IF_CMD variable not defined"
+	if [ "$CMD" != 'ip' -a "$CMD" != "$IF_CMD" ]; then
+		tst_brk TBROK "Missing or wrong -c parameter: '$CMD', use 'ip' or '$IF_CMD'"
 	fi
-	return 0
+
+	tst_test_cmds "$CMD"
+	netstress_setup
+	TST_CLEANUP="${TST_CLEANUP:-netstress_cleanup}"
 }
+
+if_cleanup_restore()
+{
+	netstress_cleanup
+	restore_ipaddr
+	restore_ipaddr rhost
+}
+
+TST_SETUP="${TST_SETUP:-if_setup}"
+TST_TESTFUNC="test_body"
+TST_PARSE_ARGS="if_parse_args"
+TST_USAGE="if_usage"
+TST_OPTS="c:"
+
+. tst_net_stress.sh

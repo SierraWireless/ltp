@@ -53,6 +53,7 @@
 #include <netinet/in.h>
 
 #include "test.h"
+#include "safe_macros.h"
 
 char *TCID = "connect01";
 int testno;
@@ -114,6 +115,24 @@ int TST_TOTAL = sizeof(tdat) / sizeof(tdat[0]);
 #ifdef UCLINUX
 static char *argv0;
 #endif
+
+/**
+ * bionic's connect() implementation calls netdClientInitConnect() before
+ * sending the request to the kernel.  We need to bypass this, or the test will
+ * segfault during the addr = (struct sockaddr *)-1 testcase. We had cases where
+ * tests started to segfault on glibc upgrade or in special conditions where
+ * libc had to convert structure layouts between 32bit/64bit userspace/kernel =>
+ * safer to call the raw syscall regardless of the libc implementation.
+ */
+#include "lapi/syscalls.h"
+
+static int sys_connect(int sockfd, const struct sockaddr *addr,
+		socklen_t addrlen)
+{
+	return ltp_syscall(__NR_connect, sockfd, addr, addrlen);
+}
+
+#define connect(sockfd, addr, addrlen) sys_connect(sockfd, addr, addrlen)
 
 int main(int argc, char *argv[])
 {
@@ -202,9 +221,8 @@ void cleanup0(void)
 
 void setup1(void)
 {
-	s = socket(tdat[testno].domain, tdat[testno].type, tdat[testno].proto);
-	if (s < 0)
-		tst_brkm(TBROK | TERRNO, cleanup, "socket() failed");
+	s = SAFE_SOCKET(cleanup, tdat[testno].domain, tdat[testno].type,
+		        tdat[testno].proto);
 }
 
 void cleanup1(void)
@@ -216,9 +234,7 @@ void cleanup1(void)
 void setup2(void)
 {
 	setup1();		/* get a socket in s */
-	if (connect(s, (const struct sockaddr *)&sin1, sizeof(sin1)) < 0)
-		tst_brkm(TBROK | TERRNO, cleanup,
-			 "socket setup failed connect test %d", testno);
+	SAFE_CONNECT(cleanup, s, (const struct sockaddr *)&sin1, sizeof(sin1));
 }
 
 pid_t start_server(struct sockaddr_in *sin0)
@@ -243,8 +259,7 @@ pid_t start_server(struct sockaddr_in *sin0)
 		tst_brkm(TBROK | TERRNO, cleanup, "server listen failed");
 		return -1;
 	}
-	if (getsockname(sfd, (struct sockaddr *)sin0, &slen) == -1)
-		tst_brkm(TBROK | TERRNO, cleanup, "getsockname failed");
+	SAFE_GETSOCKNAME(cleanup, sfd, (struct sockaddr *)sin0, &slen);
 
 	switch ((pid = FORK_OR_VFORK())) {
 	case 0:		/* child */

@@ -59,16 +59,15 @@
 
 #include "test.h"
 #define CLEANUP cleanup
-#include "linux_syscall_numbers.h"
-
-#ifdef HAVE_LIBAIO_H
-#include <libaio.h>
-#endif
-
-static void setup(void);
+#include "lapi/syscalls.h"
 
 TCID_DEFINE(eventfd01);
 int TST_TOTAL = 15;
+
+#ifdef HAVE_LIBAIO
+#include <libaio.h>
+
+static void setup(void);
 
 static int myeventfd(unsigned int initval, int flags)
 {
@@ -504,6 +503,7 @@ static int trigger_eventfd_overflow(int evfd, int *fd, io_context_t * ctx)
 	int ret;
 	struct iocb iocb;
 	struct iocb *iocbap[1];
+	struct io_event ioev;
 	static char buf[4 * 1024];
 
 	*ctx = 0;
@@ -534,6 +534,13 @@ static int trigger_eventfd_overflow(int evfd, int *fd, io_context_t * ctx)
 	if (ret < 0) {
 		errno = -ret;
 		tst_resm(TINFO | TERRNO, "error submitting iocb");
+		goto err_close_file;
+	}
+
+	ret = io_getevents(*ctx, 1, 1, &ioev, NULL);
+	if (ret < 0) {
+		errno = -ret;
+		tst_resm(TINFO | TERRNO, "error waiting for event");
 		goto err_close_file;
 	}
 
@@ -719,3 +726,10 @@ static void cleanup(void)
 {
 	tst_rmdir();
 }
+
+#else
+int main(void)
+{
+	tst_brkm(TCONF, NULL, "test requires libaio and it's development packages");
+}
+#endif

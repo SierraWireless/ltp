@@ -145,6 +145,7 @@ static void do_test(void)
 static void setup(void)
 {
 	const char *fs_opts[3] = {"-b", "1024", NULL};
+	const char *extra_opts[] = {"10240", NULL};
 
 	tst_sig(FORK, DEF_HANDLER, NULL);
 	tst_require_root();
@@ -159,7 +160,7 @@ static void setup(void)
 	device = tst_acquire_device(cleanup);
 	if (!device)
 		tst_brkm(TCONF, cleanup, "Failed to obtain block device");
-	tst_mkfs(cleanup, device, fs_type, fs_opts, "10240");
+	tst_mkfs(cleanup, device, fs_type, fs_opts, extra_opts);
 
 	SAFE_MKDIR(cleanup, MNTPOINT, 0755);
 	/*
@@ -220,7 +221,7 @@ static void do_child(void)
 	 * kernel writepage is called, that means data corruption.
 	 */
 	TST_SAFE_CHECKPOINT_WAKE(NULL, 0);
-	TST_SAFE_CHECKPOINT_WAIT(NULL, 0);
+	TST_SAFE_CHECKPOINT_WAIT2(NULL, 0, 60*1000);
 
 	for (offset = FS_BLOCKSIZE; offset < page_size; offset += FS_BLOCKSIZE)
 		addr[offset] = 'a';

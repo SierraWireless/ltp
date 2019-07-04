@@ -74,12 +74,11 @@ static void verify_socket(unsigned int n)
 
 static void cleanup(void)
 {
-	if (fd > 0 && close(fd))
-		tst_res(TWARN | TERRNO, "failed to close file");
+	if (fd > 0)
+		SAFE_CLOSE(fd);
 }
 
 static struct tst_test test = {
-	.tid = "socket02",
 	.tcnt = ARRAY_SIZE(tcases),
 	.test = verify_socket,
 	.min_kver = "2.6.27",

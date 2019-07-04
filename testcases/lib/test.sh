@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-# Copyright (c) Linux Test Project, 2014
+# Copyright (c) Linux Test Project, 2014-2017
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -24,6 +24,9 @@
 export LTP_RET_VAL=0
 export TST_COUNT=1
 export TST_LIB_LOADED=1
+export TST_TMPDIR_RHOST=0
+
+. tst_ansi_color.sh
 
 # Exit values map
 tst_flag2mask()
@@ -41,13 +44,18 @@ tst_flag2mask()
 
 tst_resm()
 {
-	tst_flag2mask "$1"
+	local ttype="$1"
+
+	tst_flag2mask "$ttype"
 	local mask=$?
 	LTP_RET_VAL=$((LTP_RET_VAL|mask))
 
 	local ret=$1
 	shift
-	echo "$TCID $TST_COUNT $ret : $@"
+
+	printf "$TCID $TST_COUNT "
+	tst_print_colored $ret "$ret:"
+	echo " $@"
 
 	case "$ret" in
 	TPASS|TFAIL)
@@ -96,11 +104,11 @@ tst_require_root()
 
 tst_exit()
 {
-	if [ -n "$TST_CLEANUP" ]; then
+	if [ -n "${TST_CLEANUP:-}" -a -z "${TST_NO_CLEANUP:-}" ]; then
 		$TST_CLEANUP
 	fi
 
-	if [ -n "$LTP_IPC_PATH" -a -f "$LTP_IPC_PATH" ]; then
+	if [ -n "${LTP_IPC_PATH:-}" -a -f "${LTP_IPC_PATH:-}" ]; then
 		rm -f "$LTP_IPC_PATH"
 	fi
 
@@ -125,14 +133,17 @@ tst_tmpdir()
 
 tst_rmdir()
 {
-	cd "$LTPROOT"
-	rm -r "$TST_TMPDIR"
+	if [ -n "$TST_TMPDIR" ]; then
+		cd "$LTPROOT"
+		rm -r "$TST_TMPDIR"
+		[ "$TST_TMPDIR_RHOST" = 1 ] && tst_cleanup_rhost
+	fi
 }
 
 #
 # Checks if commands passed as arguments exists
 #
-tst_check_cmds()
+tst_test_cmds()
 {
 	local cmd
 	for cmd in $*; do
@@ -214,8 +225,9 @@ tst_timeout()
 
 ROD_SILENT()
 {
-	$@ > /dev/null 2>&1
+	local tst_out="$($@ 2>&1)"
 	if [ $? -ne 0 ]; then
+		echo "$tst_out"
 		tst_brkm TBROK "$@ failed"
 	fi
 }
@@ -278,58 +290,6 @@ EXPECT_FAIL()
 		tst_resm TPASS "$@ failed as expected"
 	else
 		tst_resm TFAIL "$@ passed unexpectedly"
-	fi
-}
-
-tst_acquire_device()
-{
-	local acq_dev_size=${1:-150}
-
-	if [ -z ${TST_TMPDIR} ]; then
-		tst_brkm "Use 'tst_tmpdir' before 'tst_acquire_device'"
-	fi
-
-	ltp_dev_size=$((`blockdev --getsize64 $LTP_DEV`/1024/1024))
-
-	if [ -n "${LTP_DEV}" ] && [ ${acq_dev_size} -le ${ltp_dev_size} ]; then
-		tst_resm TINFO "Using test device LTP_DEV='${LTP_DEV}'"
-		if [ ! -b ${LTP_DEV} ]; then
-			tst_brkm TBROK "${LTP_DEV} is not a block device"
-		fi
-
-		ROD_SILENT dd if=/dev/zero of="${LTP_DEV}" bs=1024 count=512
-
-		TST_DEVICE=${LTP_DEV}
-		TST_DEVICE_FLAG=0
-		return
-	fi
-
-	ROD_SILENT dd if=/dev/zero of=test_dev.img bs=1024 count=$((1024*$acq_dev_size))
-
-	TST_DEVICE=$(losetup -f)
-	if [ $? -ne 0 ]; then
-		tst_brkm TBROK "Couldn't find free loop device"
-	fi
-
-	tst_resm TINFO "Found free device '${TST_DEVICE}'"
-
-	ROD_SILENT losetup ${TST_DEVICE} test_dev.img
-
-	TST_DEVICE_FLAG=1
-}
-
-tst_release_device()
-{
-	if [ ${TST_DEVICE_FLAG} -eq 0 ]; then
-		return
-	fi
-
-	losetup -a | grep -q ${TST_DEVICE}
-	if [ $? -eq 0 ]; then
-		losetup -d ${TST_DEVICE}
-		if [ $? -ne 0 ];then
-			tst_resm TWARN "'losetup -d ${TST_DEVICE}' failed"
-		fi
 	fi
 }
 
@@ -461,9 +421,9 @@ fi
 if [ "$TST_NEEDS_CHECKPOINTS" = "1" ]; then
 	LTP_IPC_PATH="/dev/shm/ltp_${TCID}_$$"
 
-	LTP_IPC_SIZE=$(getconf PAGESIZE)
+	LTP_IPC_SIZE=$(tst_getconf PAGESIZE)
 	if [ $? -ne 0 ]; then
-		tst_brkm TBROK "getconf PAGESIZE failed"
+		tst_brkm TBROK "tst_getconf PAGESIZE failed"
 	fi
 
 	ROD_SILENT dd if=/dev/zero of="$LTP_IPC_PATH" bs="$LTP_IPC_SIZE" count=1

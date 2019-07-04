@@ -81,20 +81,167 @@ char *tst_sock_addr(const struct sockaddr *sa, socklen_t salen, char *res,
 	}
 }
 
+int tst_getsockport(const char *file, const int lineno, int sockfd)
+{
+	struct sockaddr_storage ss;
+	socklen_t addrlen = sizeof(ss);
+	struct sockaddr *sa = (struct sockaddr *)&ss;
+
+	safe_getsockname(file, lineno, NULL, sockfd, sa, &addrlen);
+
+	switch (sa->sa_family) {
+	case AF_INET: {
+		struct sockaddr_in *sin = (struct sockaddr_in *)sa;
+
+		return ntohs(sin->sin_port);
+	}
+	case AF_INET6: {
+		struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)sa;
+
+		return ntohs(sin6->sin6_port);
+	} }
+
+	return -1;
+}
+
 int safe_socket(const char *file, const int lineno, void (cleanup_fn)(void),
 		int domain, int type, int protocol)
 {
-	int rval;
+	int rval, ttype;
 
 	rval = socket(domain, type, protocol);
 
 	if (rval < 0) {
-		tst_brkm(TBROK | TERRNO, cleanup_fn,
+		switch (errno) {
+		case EPROTONOSUPPORT:
+		case ESOCKTNOSUPPORT:
+		case EOPNOTSUPP:
+		case EPFNOSUPPORT:
+		case EAFNOSUPPORT:
+			ttype = TCONF;
+			break;
+		default:
+			ttype = TBROK;
+		}
+
+		tst_brkm(ttype | TERRNO, cleanup_fn,
 			 "%s:%d: socket(%d, %d, %d) failed", file, lineno,
 			 domain, type, protocol);
 	}
 
 	return rval;
+}
+
+int safe_getsockopt(const char *file, const int lineno, int sockfd, int level,
+		    int optname, void *optval, socklen_t *optlen)
+{
+	int rval = getsockopt(sockfd, level, optname, optval, optlen);
+
+	if (!rval)
+		return 0;
+
+	tst_brkm(TBROK | TERRNO, NULL,
+		 "%s:%d: getsockopt(%d, %d, %d, %p, %p) failed",
+		 file, lineno, sockfd, level, optname, optval, optlen);
+
+	return rval;
+}
+
+int safe_setsockopt(const char *file, const int lineno, int sockfd, int level,
+		    int optname, const void *optval, socklen_t optlen)
+{
+	int rval;
+
+	rval = setsockopt(sockfd, level, optname, optval, optlen);
+
+	if (rval) {
+		tst_brkm(TBROK | TERRNO, NULL,
+			 "%s:%d: setsockopt(%d, %d, %d, %p, %d) failed",
+			 file, lineno, sockfd, level, optname, optval, optlen);
+	}
+
+	return rval;
+}
+
+ssize_t safe_send(const char *file, const int lineno, char len_strict,
+		  int sockfd, const void *buf, size_t len, int flags)
+{
+	ssize_t rval;
+
+	rval = send(sockfd, buf, len, flags);
+
+	if (rval == -1 || (len_strict && (size_t)rval != len)) {
+		tst_brkm(TBROK | TERRNO, NULL,
+			 "%s:%d: send(%d, %p, %zu, %d) failed",
+			 file, lineno, sockfd, buf, len, flags);
+	}
+
+	return rval;
+}
+
+ssize_t safe_sendto(const char *file, const int lineno, char len_strict,
+		    int sockfd, const void *buf, size_t len, int flags,
+		    const struct sockaddr *dest_addr, socklen_t addrlen)
+{
+	ssize_t rval;
+	char res[128];
+
+	rval = sendto(sockfd, buf, len, flags, dest_addr, addrlen);
+
+	if (rval == -1 || (len_strict && (size_t)rval != len)) {
+		tst_brkm(TBROK | TERRNO, NULL,
+			 "%s:%d: sendto(%d, %p, %zu, %d, %s, %d) failed",
+			 file, lineno, sockfd, buf, len, flags,
+			 tst_sock_addr(dest_addr, addrlen, res, sizeof(res)),
+			 addrlen);
+	}
+
+	return rval;
+}
+
+ssize_t safe_sendmsg(const char *file, const int lineno, size_t len,
+		     int sockfd, const struct msghdr *msg, int flags)
+{
+	ssize_t rval;
+
+	rval = sendmsg(sockfd, msg, flags);
+
+	if (rval == -1) {
+		tst_brkm(TBROK | TERRNO, NULL,
+			 "%s:%d: sendmsg(%d, %p, %d) failed",
+			 file, lineno, sockfd, msg, flags);
+	}
+
+	if (len && (size_t)rval != len) {
+		tst_brkm(TBROK, NULL,
+			 "%s:%d: sendmsg(%d, %p, %d) ret(%zd) != len(%zu)",
+			 file, lineno, sockfd, msg, flags, rval, len);
+	}
+
+	return rval;
+}
+
+ssize_t safe_recvmsg(const char *file, const int lineno, size_t len,
+		     int sockfd, struct msghdr *msg, int flags)
+{
+	ssize_t rval;
+
+	rval = recvmsg(sockfd, msg, flags);
+
+	if (rval == -1) {
+		tst_brkm(TBROK | TERRNO, NULL,
+			 "%s:%d: recvmsg(%d, %p, %d) failed",
+			 file, lineno, sockfd, msg, flags);
+	}
+
+	if (len && (size_t)rval != len) {
+		tst_brkm(TBROK, NULL,
+			 "%s:%d: recvmsg(%d, %p, %d) ret(%zd) != len(%zu)",
+			 file, lineno, sockfd, msg, flags, rval, len);
+	}
+
+	return rval;
+
 }
 
 int safe_bind(const char *file, const int lineno, void (cleanup_fn)(void),
@@ -114,6 +261,7 @@ int safe_bind(const char *file, const int lineno, void (cleanup_fn)(void),
 				 socket, tst_sock_addr(address, address_len,
 						       buf, sizeof(buf)),
 				 address_len);
+			return -1;
 		}
 
 		if ((i + 1) % 10 == 0) {
@@ -129,6 +277,7 @@ int safe_bind(const char *file, const int lineno, void (cleanup_fn)(void),
 		 lineno, socket,
 		 tst_sock_addr(address, address_len, buf, sizeof(buf)),
 		 address_len);
+	return -1;
 }
 
 int safe_listen(const char *file, const int lineno, void (cleanup_fn)(void),

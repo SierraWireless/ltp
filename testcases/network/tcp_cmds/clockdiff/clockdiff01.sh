@@ -1,5 +1,5 @@
 #!/bin/sh
-# Copyright (c) 2016 Oracle and/or its affiliates. All Rights Reserved.
+# Copyright (c) 2016-2017 Oracle and/or its affiliates. All Rights Reserved.
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License as
@@ -18,14 +18,15 @@
 
 TCID=clockdiff01
 TST_TOTAL=1
-. test_net.sh
+TST_USE_LEGACY_API=1
+. tst_net.sh
 
 tst_require_root
-tst_check_cmds cut clockdiff
+tst_test_cmds cut clockdiff
 
-tst_resm TINFO "check time delta for $(hostname)"
+tst_resm TINFO "check time delta for $(tst_ipaddr)"
 
-output=$(clockdiff $(hostname))
+output=$(clockdiff $(tst_ipaddr))
 
 if [ $? -ne 0 ]; then
 	tst_resm TFAIL "clockdiff failed to get delta"

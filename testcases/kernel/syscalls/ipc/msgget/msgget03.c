@@ -29,6 +29,7 @@
 #include <stdlib.h>
 
 #include "tst_test.h"
+#include "tst_safe_sysv_ipc.h"
 #include "libnewipc.h"
 
 static int maxmsgs;
@@ -38,10 +39,10 @@ static key_t msgkey;
 static void verify_msgget(void)
 {
 	TEST(msgget(msgkey + maxmsgs, IPC_CREAT | IPC_EXCL));
-	if (TEST_RETURN != -1)
+	if (TST_RET != -1)
 		tst_res(TFAIL, "msgget() succeeded unexpectedly");
 
-	if (TEST_ERRNO == ENOSPC) {
+	if (TST_ERR == ENOSPC) {
 		tst_res(TPASS | TTERRNO, "msgget() failed as expected");
 	} else {
 		tst_res(TFAIL | TTERRNO, "msgget() failed unexpectedly,"
@@ -79,18 +80,14 @@ static void cleanup(void)
 		return;
 
 	for (num = 0; num < maxmsgs; num++) {
-		if (queues[num] != -1 && msgctl(queues[num], IPC_RMID, NULL)) {
-			tst_res(TWARN | TERRNO,
-				"failed to delete message queue %i",
-				queues[num]);
-		}
+		if (queues[num] != -1)
+			SAFE_MSGCTL(queues[num], IPC_RMID, NULL);
 	}
 
 	free(queues);
 }
 
 static struct tst_test test = {
-	.tid = "msgget03",
 	.needs_tmpdir = 1,
 	.setup = setup,
 	.cleanup = cleanup,

@@ -48,6 +48,7 @@
 #include <stdio.h>
 #include "pidns_helper.h"
 #include "test.h"
+#include "safe_macros.h"
 
 char *TCID = "pidns20";
 int TST_TOTAL = 1;
@@ -65,7 +66,7 @@ int broken = 1;			/* broken should be 0 when test completes properly */
 static void child_signal_handler(int sig, siginfo_t * si, void *unused)
 {
 	if (si->si_signo != SIGUSR1)
-		tst_resm(TBROK, "cinit: recieved %s unexpectedly!",
+		tst_resm(TBROK, "cinit: received %s unexpectedly!",
 			 strsignal(si->si_signo));
 	else
 		tst_resm(TPASS, "cinit: user function is called as expected");
@@ -179,9 +180,7 @@ int main(int argc, char *argv[])
 	}
 
 	/* Enqueue SIGUSR1 in pending signal queue of container */
-	if (kill(cpid, SIGUSR1) == -1) {
-		tst_brkm(TBROK | TERRNO, NULL, "kill() failed");
-	}
+	SAFE_KILL(NULL, cpid, SIGUSR1);
 
 	tst_resm(TINFO, "parent: signalled SIGUSR1 to container");
 	if (write(parent_cinit[1], "p:go", 5) != 5) {
@@ -189,9 +188,7 @@ int main(int argc, char *argv[])
 	}
 
 	/* collect exit status of child */
-	if (wait(&status) == -1) {
-		tst_brkm(TBROK | TERRNO, NULL, "wait failed");
-	}
+	SAFE_WAIT(NULL, &status);
 
 	if (WIFSIGNALED(status)) {
 		if (WTERMSIG(status) == SIGUSR1)

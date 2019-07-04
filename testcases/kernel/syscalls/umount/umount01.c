@@ -38,13 +38,13 @@ static void verify_umount(void)
 
 	TEST(umount(MNTPOINT));
 
-	if (TEST_RETURN != 0 && TEST_ERRNO == EBUSY) {
+	if (TST_RET != 0 && TST_ERR == EBUSY) {
 		tst_res(TINFO, "umount() Failed with EBUSY "
 			"possibly some daemon (gvfsd-trash) "
 			"is probing newly mounted dirs");
 	}
 
-	if (TEST_RETURN != 0) {
+	if (TST_RET != 0) {
 		tst_res(TFAIL | TTERRNO, "umount() Failed");
 		return;
 	}
@@ -55,8 +55,6 @@ static void verify_umount(void)
 
 static void setup(void)
 {
-	SAFE_MKFS(tst_device->dev, tst_device->fs_type, NULL, NULL);
-
 	SAFE_MKDIR(MNTPOINT, 0775);
 }
 
@@ -67,10 +65,9 @@ static void cleanup(void)
 }
 
 static struct tst_test test = {
-	.tid = "umount01",
 	.needs_root = 1,
 	.needs_tmpdir = 1,
-	.needs_device = 1,
+	.format_device = 1,
 	.setup = setup,
 	.cleanup = cleanup,
 	.test_all = verify_umount,

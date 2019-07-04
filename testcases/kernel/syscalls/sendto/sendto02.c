@@ -61,19 +61,19 @@ static void setup(void)
 
 static void cleanup(void)
 {
-	if (sockfd > 0 && close(sockfd))
-		tst_res(TWARN | TERRNO, "failed to close file");
+	if (sockfd > 0)
+		SAFE_CLOSE(sockfd);
 }
 
 static void verify_sendto(void)
 {
 	TEST(sendto(sockfd, NULL, 1, 0, (struct sockaddr *) &sa, sizeof(sa)));
-	if (TEST_RETURN != -1) {
+	if (TST_RET != -1) {
 		tst_res(TFAIL, "sendto(fd, NULL, ...) succeeded unexpectedly");
 		return;
 	}
 
-	if (TEST_ERRNO == EFAULT) {
+	if (TST_ERR == EFAULT) {
 		tst_res(TPASS | TTERRNO,
 			"sendto(fd, NULL, ...) failed expectedly");
 		return;
@@ -84,7 +84,6 @@ static void verify_sendto(void)
 }
 
 static struct tst_test test = {
-	.tid = "sendto02",
 	.setup = setup,
 	.cleanup = cleanup,
 	.test_all = verify_sendto,

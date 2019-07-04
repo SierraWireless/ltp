@@ -38,7 +38,7 @@
 #define STR "abcdefghijklmnopqrstuvwxyz12345\n"
 
 static char *sfile;
-static char *pfile;
+static char *amem;
 static struct stat st;
 
 static struct tcase {
@@ -57,10 +57,14 @@ static struct tcase {
 	{MADV_HWPOISON,    "MADV_HWPOISON",    &sfile}, /* since Linux 2.6.32 */
 	{MADV_MERGEABLE,   "MADV_MERGEABLE",   &sfile}, /* since Linux 2.6.32 */
 	{MADV_UNMERGEABLE, "MADV_UNMERGEABLE", &sfile}, /* since Linux 2.6.32 */
-	{MADV_HUGEPAGE,    "MADV_HUGEPAGE",    &pfile}, /* since Linux 2.6.38 */
-	{MADV_NOHUGEPAGE,  "MADV_NOHUGEPAGE",  &pfile}, /* since Linux 2.6.38 */
+	{MADV_HUGEPAGE,    "MADV_HUGEPAGE",    &amem},  /* since Linux 2.6.38 */
+	{MADV_NOHUGEPAGE,  "MADV_NOHUGEPAGE",  &amem},  /* since Linux 2.6.38 */
 	{MADV_DONTDUMP,    "MADV_DONTDUMP",    &sfile}, /* since Linux 3.4 */
-	{MADV_DODUMP,      "MADV_DODUMP",      &sfile}  /* since Linux 3.4 */
+	{MADV_DODUMP,      "MADV_DODUMP",      &sfile}, /* since Linux 3.4 */
+	{MADV_FREE,        "MADV_FREE",        &amem},  /* since Linux 4.5 */
+	{MADV_WIPEONFORK,  "MADV_WIPEONFORK",  &amem},  /* since Linux 4.14 */
+	{MADV_KEEPONFORK,  "MADV_KEEPONFORK",  &amem},  /* since Linux 4.14 */
+
 };
 
 static void setup(void)
@@ -85,18 +89,17 @@ static void setup(void)
 
 	/* Map the input file into private memory. MADV_HUGEPAGE only works
 	 * with private anonymous pages */
-	pfile = SAFE_MMAP(NULL, st.st_size,
-			PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, fd, 0);
+	amem = SAFE_MMAP(NULL, st.st_size,
+			PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 
 	SAFE_CLOSE(fd);
 }
 
 static void cleanup(void)
 {
-	munmap(sfile, st.st_size);
-	munmap(pfile, st.st_size);
-	umount(TMP_DIR);
-	rmdir(TMP_DIR);
+	SAFE_MUNMAP(sfile, st.st_size);
+	SAFE_MUNMAP(amem, st.st_size);
+	SAFE_UMOUNT(TMP_DIR);
 }
 
 static void verify_madvise(unsigned int i)
@@ -105,13 +108,13 @@ static void verify_madvise(unsigned int i)
 
 	TEST(madvise(*(tc->addr), st.st_size, tc->advice));
 
-	if (TEST_RETURN == -1) {
-		if (TEST_ERRNO == EINVAL) {
+	if (TST_RET == -1) {
+		if (TST_ERR == EINVAL) {
 			tst_res(TCONF, "%s is not supported", tc->name);
 		} else {
 			tst_res(TFAIL, "madvise test for %s failed with "
 					"return = %ld, errno = %d : %s",
-					tc->name, TEST_RETURN, TEST_ERRNO,
+					tc->name, TST_RET, TST_ERR,
 					tst_strerrno(TFAIL | TTERRNO));
 		}
 	} else {
@@ -120,7 +123,6 @@ static void verify_madvise(unsigned int i)
 }
 
 static struct tst_test test = {
-	.tid = "madvise01",
 	.tcnt = ARRAY_SIZE(tcases),
 	.test = verify_madvise,
 	.needs_tmpdir = 1,

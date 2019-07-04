@@ -61,7 +61,7 @@ static void verify_listxattr(void)
 	char buf[64];
 
 	TEST(listxattr(TESTFILE, buf, sizeof(buf)));
-	if (TEST_RETURN == -1) {
+	if (TST_RET == -1) {
 		tst_res(TFAIL | TTERRNO, "listxattr() failed");
 		return;
 	}
@@ -83,7 +83,6 @@ static void setup(void)
 }
 
 static struct tst_test test = {
-	.tid = "listxattr01",
 	.needs_tmpdir = 1,
 	.needs_root = 1,
 	.test_all = verify_listxattr,

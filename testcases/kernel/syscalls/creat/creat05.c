@@ -39,13 +39,13 @@ static void verify_creat(void)
 {
 	TEST(creat("filename", 0666));
 
-	if (TEST_RETURN != -1) {
+	if (TST_RET != -1) {
 		tst_res(TFAIL, "call succeeded unexpectedly");
-		SAFE_CLOSE(TEST_RETURN);
+		SAFE_CLOSE(TST_RET);
 		return;
 	}
 
-	if (TEST_ERRNO == EMFILE)
+	if (TST_ERR == EMFILE)
 		tst_res(TPASS, "creat() failed with EMFILE");
 	else
 		tst_res(TFAIL | TTERRNO, "Expected EMFILE");
@@ -87,7 +87,6 @@ static void cleanup(void)
 }
 
 static struct tst_test test = {
-	.tid = "creat05",
 	.test_all = verify_creat,
 	.needs_tmpdir = 1,
 	.setup = setup,

@@ -80,10 +80,8 @@
 #include <pwd.h>
 
 #include "test.h"
-
-#define FILE_MODE       (S_IRUSR|S_IWUSR|S_IRGRP|S_IROTH)
-#define PERMS		01777
-#define TESTFILE	"testfile"
+#include "safe_macros.h"
+#include "fchmod.h"
 
 int fd;				/* file descriptor for test file */
 char *TCID = "fchmod03";
@@ -147,8 +145,7 @@ void setup(void)
 	ltpuser = getpwnam(nobody_uid);
 	if (ltpuser == NULL)
 		tst_brkm(TBROK | TERRNO, NULL, "getpwnam failed");
-	if (seteuid(ltpuser->pw_uid) == -1)
-		tst_brkm(TBROK | TERRNO, NULL, "seteuid failed");
+	SAFE_SETEUID(NULL, ltpuser->pw_uid);
 
 	TEST_PAUSE;
 

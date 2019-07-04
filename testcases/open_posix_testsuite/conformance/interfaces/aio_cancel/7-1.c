@@ -25,7 +25,6 @@
  *
  */
 
-#define _XOPEN_SOURCE 600
 #include <stdio.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -68,7 +67,7 @@ int main(void)
 
 	/* create AIO req */
 	for (i = 0; i < BUF_NB; i++) {
-		aiocb[i] = malloc(sizeof(struct aiocb));
+		aiocb[i] = calloc(1, sizeof(struct aiocb));
 
 		if (aiocb[i] == NULL) {
 			printf(TNAME " Error at malloc(): %s\n",

@@ -47,13 +47,14 @@
 #include <stdio.h>
 #include <errno.h>
 #include "test.h"
+#include "safe_macros.h"
 #include <pwd.h>
 
 char *TCID = "chroot01";
 int TST_TOTAL = 1;
 int fail;
 
-char path[] = "/tmp";
+char *path;
 
 char nobody_uid[] = "nobody";
 struct passwd *ltpuser;
@@ -93,13 +94,13 @@ void setup(void)
 	tst_require_root();
 
 	tst_tmpdir();
+	path = tst_get_tmpdir();
 
 	if ((ltpuser = getpwnam(nobody_uid)) == NULL)
 		tst_brkm(TBROK | TERRNO, cleanup,
 			 "getpwnam(\"nobody\") failed");
 
-	if (seteuid(ltpuser->pw_uid) == -1)
-		tst_brkm(TBROK | TERRNO, cleanup, "seteuid to nobody failed");
+	SAFE_SETEUID(cleanup, ltpuser->pw_uid);
 
 	tst_sig(NOFORK, DEF_HANDLER, cleanup);
 
@@ -108,8 +109,8 @@ void setup(void)
 
 void cleanup(void)
 {
-	if (seteuid(0) == -1)
-		tst_brkm(TBROK | TERRNO, NULL, "setuid(0) failed");
+	SAFE_SETEUID(NULL, 0);
 
+	free(path);
 	tst_rmdir();
 }

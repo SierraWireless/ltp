@@ -38,24 +38,23 @@ static void verify_madvise(void)
 			MAP_PRIVATE | MAP_ANONYMOUS | MAP_POPULATE, -1, 0);
 
 	TEST(mprotect(p, ALLOC_SIZE, PROT_NONE));
-	if (TEST_RETURN == -1)
+	if (TST_RET == -1)
 		tst_brk(TBROK | TTERRNO, "mprotect failed");
 	TEST(madvise(p, ALLOC_SIZE, MADV_WILLNEED));
 	SAFE_MUNMAP(p, ALLOC_SIZE);
 
-	if (TEST_RETURN == 0) {
+	if (TST_RET == 0) {
 		tst_res(TPASS, "issue has not been reproduced");
 		return;
 	}
 
-	if (TEST_ERRNO == EBADF)
+	if (TST_ERR == EBADF)
 		tst_brk(TCONF, "CONFIG_SWAP=n");
 	else
 		tst_brk(TBROK | TTERRNO, "madvise failed");
 }
 
 static struct tst_test test = {
-	.tid = "madvise05",
 	.min_kver = "3.9.0",
 	.test_all = verify_madvise,
 };

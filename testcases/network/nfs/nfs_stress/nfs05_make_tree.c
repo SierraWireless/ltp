@@ -61,6 +61,7 @@
 #include <linux/unistd.h>
 
 #include "lapi/mkdirat.h"
+#include "tst_safe_pthread.h"
 #include "tst_safe_stdio.h"
 #include "tst_test.h"
 
@@ -225,7 +226,6 @@ static void do_test(void)
 }
 
 static struct tst_test test = {
-	.tid = "nfs05_make_tree",
 	.options = opts,
 	.test_all = do_test,
 	.setup = setup,

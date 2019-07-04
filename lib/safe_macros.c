@@ -210,7 +210,12 @@ int safe_open(const char *file, const int lineno, void (*cleanup_fn) (void),
 	mode_t mode;
 
 	va_start(ap, oflags);
-	mode = va_arg(ap, mode_t);
+
+	/* Android's NDK's mode_t is smaller than an int, which results in
+	 * SIGILL here when passing the mode_t type.
+	 */
+	mode = va_arg(ap, int);
+
 	va_end(ap);
 
 	rval = open(pathname, oflags, mode);
@@ -406,6 +411,13 @@ ssize_t safe_readlink(const char *file, const int lineno,
 		tst_brkm(TBROK | TERRNO, cleanup_fn,
 			 "%s:%d: readlink(%s,%p,%zu) failed",
 			 file, lineno, path, buf, bufsize);
+	} else {
+		/* readlink does not append a NUL byte to the buffer.
+		 * Add it now. */
+		if ((size_t) rval < bufsize)
+			buf[rval] = '\0';
+		else
+			buf[bufsize-1] = '\0';
 	}
 
 	return rval;
@@ -456,17 +468,20 @@ long safe_strtol(const char *file, const int lineno,
 	    || (errno != 0 && rval == 0)) {
 		tst_brkm(TBROK | TERRNO, cleanup_fn,
 			 "%s:%d: strtol(%s) failed", file, lineno, str);
+		return rval;
 	}
 
 	if (endptr == str || (*endptr != '\0' && *endptr != '\n')) {
 		tst_brkm(TBROK, cleanup_fn,
 			 "%s:%d: strtol(%s): Invalid value", file, lineno, str);
+		return 0;
 	}
 
 	if (rval > max || rval < min) {
 		tst_brkm(TBROK, cleanup_fn,
 			 "%s:%d: strtol(%s): %ld is out of range %ld - %ld",
 			 file, lineno, str, rval, min, max);
+		return 0;
 	}
 
 	return rval;
@@ -486,17 +501,20 @@ unsigned long safe_strtoul(const char *file, const int lineno,
 	    || (errno != 0 && rval == 0)) {
 		tst_brkm(TBROK | TERRNO, cleanup_fn,
 			 "%s:%d: strtoul(%s) failed", file, lineno, str);
+		return rval;
 	}
 
 	if (rval > max || rval < min) {
 		tst_brkm(TBROK, cleanup_fn,
 			 "%s:%d: strtoul(%s): %lu is out of range %lu - %lu",
 			 file, lineno, str, rval, min, max);
+		return 0;
 	}
 
 	if (endptr == str || (*endptr != '\0' && *endptr != '\n')) {
 		tst_brkm(TBROK, cleanup_fn,
 			 "Invalid value: '%s' at %s:%d", str, file, lineno);
+		return 0;
 	}
 
 	return rval;
@@ -681,6 +699,26 @@ int safe_rename(const char *file, const int lineno, void (*cleanup_fn)(void),
 	return rval;
 }
 
+static const char *const fuse_fs_types[] = {
+	"exfat",
+	"ntfs",
+};
+
+static int is_fuse(const char *fs_type)
+{
+	unsigned int i;
+
+	if (!fs_type)
+		return 0;
+
+	for (i = 0; i < ARRAY_SIZE(fuse_fs_types); i++) {
+		if (!strcmp(fuse_fs_types[i], fs_type))
+			return 1;
+	}
+
+	return 0;
+}
+
 int safe_mount(const char *file, const int lineno, void (*cleanup_fn)(void),
 	       const char *source, const char *target,
 	       const char *filesystemtype, unsigned long mountflags,
@@ -688,8 +726,30 @@ int safe_mount(const char *file, const int lineno, void (*cleanup_fn)(void),
 {
 	int rval;
 
-	rval = mount(source, target, filesystemtype, mountflags, data);
+	/*
+	 * The FUSE filesystem executes mount.fuse helper, which tries to
+	 * execute corresponding binary name which is encoded at the start of
+	 * the source string and separated by # from the device name.
+         *
+	 * The mount helpers are called mount.$fs_type.
+	 */
+	if (is_fuse(filesystemtype)) {
+		char buf[1024];
 
+		tst_resm(TINFO, "Trying FUSE...");
+		snprintf(buf, sizeof(buf), "mount.%s '%s' '%s'",
+			 filesystemtype, source, target);
+
+		rval = tst_system(buf);
+		if (WIFEXITED(rval) && WEXITSTATUS(rval) == 0)
+			return 0;
+
+		tst_brkm(TBROK, cleanup_fn, "mount.%s failed with %i",
+			 filesystemtype, rval);
+		return -1;
+	}
+
+	rval = mount(source, target, filesystemtype, mountflags, data);
 	if (rval == -1) {
 		tst_brkm(TBROK | TERRNO, cleanup_fn,
 			 "%s:%d: mount(%s, %s, %s, %lu, %p) failed",
@@ -780,6 +840,28 @@ int safe_getpriority(const char *file, const int lineno, int which, id_t who)
 	return rval;
 }
 
+ssize_t safe_getxattr(const char *file, const int lineno, const char *path,
+		      const char *name, void *value, size_t size)
+{
+	ssize_t rval;
+
+	rval = getxattr(path, name, value, size);
+
+	if (rval == -1) {
+		if (errno == ENOTSUP) {
+			tst_brkm(TCONF, NULL,
+				 "%s:%d: no xattr support in fs or mounted "
+				 "without user_xattr option", file, lineno);
+		}
+
+		tst_brkm(TBROK | TERRNO, NULL,
+			 "%s:%d: getxattr(%s, %s, %p, %zu) failed",
+			 file, lineno, path, name, value, size);
+	}
+
+	return rval;
+}
+
 int safe_setxattr(const char *file, const int lineno, const char *path,
 		  const char *name, const void *value, size_t size, int flags)
 {
@@ -794,8 +876,9 @@ int safe_setxattr(const char *file, const int lineno, const char *path,
 				 "without user_xattr option", file, lineno);
 		}
 
-		tst_brkm(TBROK | TERRNO, NULL, "%s:%d: setxattr() failed",
-			     file, lineno);
+		tst_brkm(TBROK | TERRNO, NULL,
+			 "%s:%d: setxattr(%s, %s, %p, %zu) failed",
+			 file, lineno, path, name, value, size);
 	}
 
 	return rval;
@@ -815,8 +898,9 @@ int safe_lsetxattr(const char *file, const int lineno, const char *path,
 				 "without user_xattr option", file, lineno);
 		}
 
-		tst_brkm(TBROK | TERRNO, NULL, "%s:%d: lsetxattr() failed",
-			     file, lineno);
+		tst_brkm(TBROK | TERRNO, NULL,
+			 "%s:%d: lsetxattr(%s, %s, %p, %zu, %i) failed",
+			 file, lineno, path, name, value, size, flags);
 	}
 
 	return rval;
@@ -836,8 +920,158 @@ int safe_fsetxattr(const char *file, const int lineno, int fd, const char *name,
 				 "without user_xattr option", file, lineno);
 		}
 
-		tst_brkm(TBROK | TERRNO, NULL, "%s:%d: fsetxattr() failed",
-			     file, lineno);
+		tst_brkm(TBROK | TERRNO, NULL,
+			 "%s:%d: fsetxattr(%i, %s, %p, %zu, %i) failed",
+			 file, lineno, fd, name, value, size, flags);
+	}
+
+	return rval;
+}
+
+int safe_removexattr(const char *file, const int lineno, const char *path,
+		const char *name)
+{
+	int rval;
+
+	rval = removexattr(path, name);
+
+	if (rval) {
+		if (errno == ENOTSUP) {
+			tst_brkm(TCONF, NULL,
+				"%s:%d: no xattr support in fs or mounted "
+				"without user_xattr option", file, lineno);
+		}
+
+		tst_brkm(TBROK | TERRNO, NULL,
+			 "%s:%d: removexattr(%s, %s) failed",
+			 file, lineno, path, name);
+	}
+
+	return rval;
+}
+
+int safe_lremovexattr(const char *file, const int lineno, const char *path,
+		const char *name)
+{
+	int rval;
+
+	rval = lremovexattr(path, name);
+
+	if (rval) {
+		if (errno == ENOTSUP) {
+			tst_brkm(TCONF, NULL,
+				"%s:%d: no xattr support in fs or mounted "
+				"without user_xattr option", file, lineno);
+		}
+
+		tst_brkm(TBROK | TERRNO, NULL,
+			 "%s:%d: lremovexattr(%s, %s) failed",
+			 file, lineno, path, name);
+	}
+
+	return rval;
+}
+
+int safe_fremovexattr(const char *file, const int lineno, int fd,
+		const char *name)
+{
+	int rval;
+
+	rval = fremovexattr(fd, name);
+
+	if (rval) {
+		if (errno == ENOTSUP) {
+			tst_brkm(TCONF, NULL,
+				"%s:%d: no xattr support in fs or mounted "
+				"without user_xattr option", file, lineno);
+		}
+
+		tst_brkm(TBROK | TERRNO, NULL,
+			 "%s:%d: fremovexattr(%i, %s) failed",
+			 file, lineno, fd, name);
+	}
+
+	return rval;
+}
+
+int safe_fsync(const char *file, const int lineno, int fd)
+{
+	int rval;
+
+	rval = fsync(fd);
+
+	if (rval) {
+		tst_brkm(TBROK | TERRNO, NULL,
+			"%s:%d: fsync(%i) failed", file, lineno, fd);
+	}
+
+	return rval;
+}
+
+pid_t safe_setsid(const char *file, const int lineno)
+{
+	pid_t rval;
+
+	rval = setsid();
+	if (rval == -1) {
+		tst_brkm(TBROK | TERRNO, NULL,
+			 "%s:%d: setsid() failed", file, lineno);
+	}
+
+	return rval;
+}
+
+int safe_mknod(const char *file, const int lineno, const char *pathname,
+	mode_t mode, dev_t dev)
+{
+	int rval;
+
+	rval = mknod(pathname, mode, dev);
+	if (rval == -1) {
+		tst_brkm(TBROK | TERRNO, NULL,
+			 "%s:%d: mknod() failed", file, lineno);
+	}
+
+	return rval;
+}
+
+int safe_mlock(const char *file, const int lineno, const void *addr,
+	size_t len)
+{
+	int rval;
+
+	rval = mlock(addr, len);
+	if (rval == -1) {
+		tst_brkm(TBROK | TERRNO, NULL,
+			 "%s:%d: mlock() failed", file, lineno);
+	}
+
+	return rval;
+}
+
+int safe_munlock(const char *file, const int lineno, const void *addr,
+	size_t len)
+{
+	int rval;
+
+	rval = munlock(addr, len);
+	if (rval == -1) {
+		tst_brkm(TBROK | TERRNO, NULL,
+			 "%s:%d: munlock() failed", file, lineno);
+	}
+
+	return rval;
+}
+
+int safe_mincore(const char *file, const int lineno, void *start,
+	size_t length, unsigned char *vec)
+{
+	int rval;
+
+	rval = mincore(start, length, vec);
+	if (rval == -1) {
+		tst_brkm(TBROK | TERRNO, NULL,
+			 "%s:%d: mincore() failed", file, lineno);
 	}
 
 	return rval;

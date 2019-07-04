@@ -1,38 +1,15 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * Copyright (c) 2000 Silicon Graphics, Inc.  All Rights Reserved.
  * Copyright (c) 2009-2013 Cyril Hrubis chrubis@suse.cz
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of version 2 of the GNU General Public License as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it would be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
- *
- * Further, this software is distributed without any warranty that it is
- * free of the rightful claim of any third person regarding infringement
- * or the like.  Any license provided herein, whether implied or
- * otherwise, applies only to this software file.  Patent licenses, if
- * any, provided herein do not apply to combinations of this program with
- * other software, or any other product whatsoever.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
- *
- * Contact information: Silicon Graphics, Inc., 1600 Amphitheatre Pkwy,
- * Mountain View, CA  94043, or:
- *
- * http://www.sgi.com
- *
- * For further information regarding this notice, see:
- *
- * http://oss.sgi.com/projects/GenInfo/NoticeExplan/
  */
 
 #ifndef __TEST_H__
 #define __TEST_H__
+
+#ifdef TST_TEST_H__
+# error Newlib tst_test.h already included
+#endif /* TST_TEST_H__ */
 
 #include <stdio.h>
 #include <signal.h>
@@ -49,7 +26,6 @@
 #include "tst_process_state.h"
 #include "old_resource.h"
 #include "tst_res_flags.h"
-#include "tst_timer.h"
 #include "tst_kvercmp.h"
 #include "tst_fs.h"
 #include "tst_pid.h"
@@ -58,9 +34,9 @@
 #include "tst_clone.h"
 #include "old_device.h"
 #include "old_tmpdir.h"
-#ifndef __GLIBC__
-#include <bits/reg.h>
-#endif
+#include "tst_minmax.h"
+#include "tst_get_bad_addr.h"
+#include "tst_path_has_mnt_flags.h"
 
 /*
  * Ensure that NUMSIGS is defined.
@@ -99,7 +75,7 @@
 #ifdef UCLINUX
 # define FORK_OR_VFORK			tst_vfork
 # define MAP_PRIVATE_EXCEPT_UCLINUX	0
-/* tst_flush() + vfork() */
+/* tst_old_flush() + vfork() */
 pid_t tst_vfork(void);
 #else
 # define FORK_OR_VFORK			tst_fork
@@ -156,16 +132,27 @@ void tst_resm_hexd_(const char *file, const int lineno, int ttype,
 void tst_brkm_(const char *file, const int lineno, int ttype,
 	void (*func)(void), const char *arg_fmt, ...)
 	__attribute__ ((format (printf, 5, 6))) LTP_ATTRIBUTE_NORETURN;
-#define tst_brkm(ttype, func, arg_fmt, ...) \
-	tst_brkm_(__FILE__, __LINE__, (ttype), (func), \
-		  (arg_fmt), ##__VA_ARGS__)
+
+#ifdef LTPLIB
+# include "ltp_priv.h"
+# define tst_brkm(flags, cleanup, fmt, ...) do { \
+	if (tst_test) \
+		tst_brk_(__FILE__, __LINE__, flags, fmt, ##__VA_ARGS__); \
+	else \
+		tst_brkm_(__FILE__, __LINE__, flags, cleanup, fmt, ##__VA_ARGS__); \
+	} while (0)
+#else
+# define tst_brkm(flags, cleanup, fmt, ...) do { \
+		tst_brkm_(__FILE__, __LINE__, flags, cleanup, fmt, ##__VA_ARGS__); \
+	} while (0)
+#endif
 
 void tst_require_root(void);
 void tst_exit(void) LTP_ATTRIBUTE_NORETURN;
-void tst_flush(void);
+void tst_old_flush(void);
 
 /*
- * tst_flush() + fork
+ * tst_old_flush() + fork
  * NOTE: tst_fork() will reset T_exitval to 0 for child process.
  */
 pid_t tst_fork(void);
@@ -190,9 +177,6 @@ extern int tst_count;
 /* lib/tst_sig.c */
 void tst_sig(int fork_flag, void (*handler)(), void (*cleanup)());
 
-/* lib/get_high_address.c */
-char *get_high_address(void);
-
 /* lib/self_exec.c */
 void maybe_run_child(void (*child)(), const char *fmt, ...);
 int self_exec(const char *argv0, const char *fmt, ...);
@@ -204,9 +188,12 @@ int self_exec(const char *argv0, const char *fmt, ...);
  * @fs_opts: NULL or NULL terminated array of mkfs options
  * @extra_opt: extra mkfs option which is passed after the device name
  */
-void tst_mkfs(void (cleanup_fn)(void), const char *dev,
-              const char *fs_type, const char *const fs_opts[],
-              const char *extra_opt);
+#define tst_mkfs(cleanup, dev, fs_type, fs_opts, extra_opts) \
+	tst_mkfs_(__FILE__, __LINE__, cleanup, dev, fs_type, \
+		  fs_opts, extra_opts)
+void tst_mkfs_(const char *file, const int lineno, void (cleanup_fn)(void),
+	       const char *dev, const char *fs_type,
+	       const char *const fs_opts[], const char *const extra_opts[]);
 
 /* lib/tst_net.c
  *
@@ -221,18 +208,6 @@ unsigned short tst_get_unused_port(void (cleanup_fn)(void),
  */
 const char *tst_strsig(int sig);
 const char *tst_strerrno(int err);
-
-/* lib/tst_path_has_mnt_flags.c
- *
- * Check whether a path is on a filesystem that is mounted with
- * specified flags
- * @path: path to file, if path is NULL tst_tmpdir is used.
- * @flags: NULL or NULL terminated array of mount flags
- *
- * Return: 0..n - number of flags matched
- */
-int tst_path_has_mnt_flags(void (cleanup_fn)(void),
-		const char *path, const char *flags[]);
 
 #ifdef TST_USE_COMPAT16_SYSCALL
 #define TCID_BIT_SUFFIX "_16"

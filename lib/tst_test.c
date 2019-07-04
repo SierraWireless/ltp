@@ -21,14 +21,21 @@
 #include <string.h>
 #include <stdlib.h>
 #include <errno.h>
+#include <sys/mount.h>
 #include <sys/types.h>
 #include <sys/wait.h>
-#include <sys/time.h>
 
 #define TST_NO_DEFAULT_MAIN
 #include "tst_test.h"
 #include "tst_device.h"
 #include "lapi/futex.h"
+#include "lapi/syscalls.h"
+#include "tst_ansi_color.h"
+#include "tst_safe_stdio.h"
+#include "tst_timer_test.h"
+#include "tst_clocks.h"
+#include "tst_timer.h"
+#include "tst_sys_conf.h"
 
 #include "old_resource.h"
 #include "old_device.h"
@@ -36,10 +43,12 @@
 
 struct tst_test *tst_test;
 
-static char tmpdir_created;
+static const char *tid;
 static int iterations = 1;
 static float duration = -1;
 static pid_t main_pid, lib_pid;
+static int mntpoint_mounted;
+static struct timespec tst_start_time; /* valid only for test pid */
 
 struct results {
 	int passed;
@@ -60,9 +69,11 @@ extern unsigned int tst_max_futexes;
 
 static char ipc_path[1024];
 const char *tst_ipc_path = ipc_path;
-char *const tst_ipc_envp[] = {ipc_path, NULL};
 
 static char shm_path[1024];
+
+int TST_ERR;
+long TST_RET;
 
 static void do_cleanup(void);
 static void do_exit(int ret) __attribute__ ((noreturn));
@@ -71,23 +82,37 @@ static void setup_ipc(void)
 {
 	size_t size = getpagesize();
 
-	//TODO: Fallback to tst_tmpdir() if /dev/shm does not exits?
-	snprintf(shm_path, sizeof(shm_path), "/dev/shm/ltp_%s_%d",
-	         tst_test->tid, getpid());
+	if (access("/dev/shm", F_OK) == 0) {
+		snprintf(shm_path, sizeof(shm_path), "/dev/shm/ltp_%s_%d",
+		         tid, getpid());
+	} else {
+		char *tmpdir;
+
+		if (!tst_tmpdir_created())
+			tst_tmpdir();
+
+		tmpdir = tst_get_tmpdir();
+		snprintf(shm_path, sizeof(shm_path), "%s/ltp_%s_%d",
+		         tmpdir, tid, getpid());
+		free(tmpdir);
+	}
 
 	ipc_fd = open(shm_path, O_CREAT | O_EXCL | O_RDWR, 0600);
 	if (ipc_fd < 0)
 		tst_brk(TBROK | TERRNO, "open(%s)", shm_path);
+	SAFE_CHMOD(shm_path, 0666);
 
 	SAFE_FTRUNCATE(ipc_fd, size);
 
 	results = SAFE_MMAP(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, ipc_fd, 0);
 
 	/* Checkpoints needs to be accessible from processes started by exec() */
-	if (tst_test->needs_checkpoints)
+	if (tst_test->needs_checkpoints || tst_test->child_needs_reinit) {
 		sprintf(ipc_path, IPC_ENV_VAR "=%s", shm_path);
-	else
+		putenv(ipc_path);
+	} else {
 		SAFE_UNLINK(shm_path);
+	}
 
 	SAFE_CLOSE(ipc_fd);
 
@@ -104,41 +129,40 @@ static void cleanup_ipc(void)
 	if (ipc_fd > 0 && close(ipc_fd))
 		tst_res(TWARN | TERRNO, "close(ipc_fd) failed");
 
-	if (!access(shm_path, F_OK) && unlink(shm_path))
+	if (shm_path[0] && !access(shm_path, F_OK) && unlink(shm_path))
 		tst_res(TWARN | TERRNO, "unlink(%s) failed", shm_path);
 
-	msync((void*)results, size, MS_SYNC);
-	munmap((void*)results, size);
+	if (results) {
+		msync((void*)results, size, MS_SYNC);
+		munmap((void*)results, size);
+	}
 }
 
 void tst_reinit(void)
 {
-	const char *path = getenv("LTP_IPC_PATH");
+	const char *path = getenv(IPC_ENV_VAR);
 	size_t size = getpagesize();
 	int fd;
-	void *ptr;
 
 	if (!path)
-		tst_brk(TBROK, "LTP_IPC_PATH is not defined");
+		tst_brk(TBROK, IPC_ENV_VAR" is not defined");
 
 	if (access(path, F_OK))
 		tst_brk(TBROK, "File %s does not exist!", path);
 
 	fd = SAFE_OPEN(path, O_RDWR);
 
-	ptr = SAFE_MMAP(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-	tst_futexes = (char*)ptr + sizeof(struct results);
+	results = SAFE_MMAP(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+	tst_futexes = (char*)results + sizeof(struct results);
 	tst_max_futexes = (size - sizeof(struct results))/sizeof(futex_t);
 
 	SAFE_CLOSE(fd);
 }
 
-static void update_results(const char *file, unsigned int lineno, int ttype)
+static void update_results(int ttype)
 {
-	if (!results) {
-		tst_brk(TBROK,
-		        "%s: %d: Results IPC not initialized!", file, lineno);
-	}
+	if (!results)
+		return;
 
 	switch (ttype) {
 	case TCONF:
@@ -161,7 +185,7 @@ static void print_result(const char *file, const int lineno, int ttype,
 {
 	char buf[1024];
 	char *str = buf;
-	int ret, size = sizeof(buf);
+	int ret, size = sizeof(buf), ssize;
 	const char *str_errno = NULL;
 	const char *res;
 
@@ -186,28 +210,50 @@ static void print_result(const char *file, const int lineno, int ttype,
 	break;
 	default:
 		tst_brk(TBROK, "Invalid ttype value %i", ttype);
+		abort();
 	}
 
 	if (ttype & TERRNO)
 		str_errno = tst_strerrno(errno);
 
 	if (ttype & TTERRNO)
-		str_errno = tst_strerrno(TEST_ERRNO);
+		str_errno = tst_strerrno(TST_ERR);
 
-	ret = snprintf(str, size, "%s:%i: %s: ", file, lineno, res);
+	if (ttype & TRERRNO) {
+		ret = TST_RET < 0 ? -(int)TST_RET : (int)TST_RET;
+		str_errno = tst_strerrno(ret);
+	}
 
+	ret = snprintf(str, size, "%s:%i: ", file, lineno);
 	str += ret;
 	size -= ret;
 
-	ret = vsnprintf(str, size, fmt, va);
-
-	str += ret;
-	size -= ret;
-
-	if (str_errno)
-		snprintf(str, size, ": %s\n", str_errno);
+	if (tst_color_enabled(STDERR_FILENO))
+		ret = snprintf(str, size, "%s%s: %s", tst_ttype2color(ttype),
+			       res, ANSI_COLOR_RESET);
 	else
-		snprintf(str, size, "\n");
+		ret = snprintf(str, size, "%s: ", res);
+	str += ret;
+	size -= ret;
+
+	ssize = size - 2;
+	ret = vsnprintf(str, size, fmt, va);
+	str += MIN(ret, ssize);
+	size -= MIN(ret, ssize);
+	if (ret >= ssize) {
+		tst_res_(file, lineno, TWARN,
+				"Next message is too long and truncated:");
+	} else if (str_errno) {
+		ssize = size - 2;
+		ret = snprintf(str, size, ": %s", str_errno);
+		str += MIN(ret, ssize);
+		size -= MIN(ret, ssize);
+		if (ret >= ssize)
+			tst_res_(file, lineno, TWARN,
+				"Next message is too long and truncated:");
+	}
+
+	snprintf(str, size, "\n");
 
 	fputs(buf, stderr);
 }
@@ -217,16 +263,35 @@ void tst_vres_(const char *file, const int lineno, int ttype,
 {
 	print_result(file, lineno, ttype, fmt, va);
 
-	update_results(file, lineno, TTYPE_RESULT(ttype));
+	update_results(TTYPE_RESULT(ttype));
 }
 
 void tst_vbrk_(const char *file, const int lineno, int ttype,
-               const char *fmt, va_list va) __attribute__((noreturn));
+               const char *fmt, va_list va);
+
+static void (*tst_brk_handler)(const char *file, const int lineno, int ttype,
+			       const char *fmt, va_list va) = tst_vbrk_;
+
+static void tst_cvres(const char *file, const int lineno, int ttype,
+		      const char *fmt, va_list va)
+{
+	if (TTYPE_RESULT(ttype) == TBROK) {
+		ttype &= ~TTYPE_MASK;
+		ttype |= TWARN;
+	}
+
+	print_result(file, lineno, ttype, fmt, va);
+	update_results(TTYPE_RESULT(ttype));
+}
 
 static void do_test_cleanup(void)
 {
+	tst_brk_handler = tst_cvres;
+
 	if (tst_test->cleanup)
 		tst_test->cleanup();
+
+	tst_brk_handler = tst_vbrk_;
 }
 
 void tst_vbrk_(const char *file, const int lineno, int ttype,
@@ -234,7 +299,13 @@ void tst_vbrk_(const char *file, const int lineno, int ttype,
 {
 	print_result(file, lineno, ttype, fmt, va);
 
-	if (getpid() == main_pid)
+	/*
+	 * The getpid implementation in some C library versions may cause cloned
+	 * test threads to show the same pid as their parent when CLONE_VM is
+	 * specified but CLONE_THREAD is not. Use direct syscall to avoid
+	 * cleanup running in the child.
+	 */
+	if (syscall(SYS_getpid) == main_pid)
 		do_test_cleanup();
 
 	if (getpid() == lib_pid)
@@ -259,7 +330,7 @@ void tst_brk_(const char *file, const int lineno, int ttype,
 	va_list va;
 
 	va_start(va, fmt);
-	tst_vbrk_(file, lineno, ttype, fmt, va);
+	tst_brk_handler(file, lineno, ttype, fmt, va);
 	va_end(va);
 }
 
@@ -273,7 +344,7 @@ static void check_child_status(pid_t pid, int status)
 	}
 
 	if (!(WIFEXITED(status)))
-		tst_brk(TBROK, "Child (%i) exitted abnormaly", pid);
+		tst_brk(TBROK, "Child (%i) exited abnormaly", pid);
 
 	ret = WEXITSTATUS(status);
 	switch (ret) {
@@ -282,6 +353,7 @@ static void check_child_status(pid_t pid, int status)
 	case TBROK:
 	case TCONF:
 		tst_brk(ret, "Reported by child (%i)", pid);
+	break;
 	default:
 		tst_brk(TBROK, "Invalid child (%i) exit value %i", pid, ret);
 	}
@@ -318,7 +390,7 @@ pid_t safe_fork(const char *filename, unsigned int lineno)
 	if (!tst_test->forks_child)
 		tst_brk(TBROK, "test.forks_child must be set!");
 
-	fflush(stdout);
+	tst_flush();
 
 	pid = fork();
 	if (pid < 0)
@@ -423,6 +495,7 @@ static void parse_opts(int argc, char *argv[])
 		case '?':
 			print_help();
 			tst_brk(TBROK, "Invalid option");
+		break;
 		case 'h':
 			print_help();
 			exit(0);
@@ -441,9 +514,28 @@ static void parse_opts(int argc, char *argv[])
 			parse_topt(topts_len, opt, optarg);
 		}
 	}
+
+	if (optind < argc)
+		tst_brk(TBROK, "Unexpected argument(s) '%s'...", argv[optind]);
 }
 
 int tst_parse_int(const char *str, int *val, int min, int max)
+{
+	long rval;
+
+	if (!str)
+		return 0;
+
+	int ret = tst_parse_long(str, &rval, min, max);
+
+	if (ret)
+		return ret;
+
+	*val = (int)rval;
+	return 0;
+}
+
+int tst_parse_long(const char *str, long *val, long min, long max)
 {
 	long rval;
 	char *end;
@@ -460,10 +552,10 @@ int tst_parse_int(const char *str, int *val, int min, int max)
 	if (errno)
 		return errno;
 
-	if (rval > (long)max || rval < (long)min)
+	if (rval > max || rval < min)
 		return ERANGE;
 
-	*val = (int)rval;
+	*val = rval;
 	return 0;
 }
 
@@ -500,10 +592,13 @@ static void do_exit(int ret)
 		printf("skipped  %d\n", results->skipped);
 		printf("warnings %d\n", results->warnings);
 
+		if (results->passed && ret == TCONF)
+			ret = 0;
+
 		if (results->failed)
 			ret |= TFAIL;
 
-		if (results->skipped)
+		if (results->skipped && !results->passed)
 			ret |= TCONF;
 
 		if (results->warnings)
@@ -549,6 +644,7 @@ static int needs_tmpdir(void)
 {
 	return tst_test->needs_tmpdir ||
 	       tst_test->needs_device ||
+	       tst_test->mntpoint ||
 	       tst_test->resource_files ||
 	       tst_test->needs_checkpoints;
 }
@@ -561,28 +657,127 @@ static void copy_resources(void)
 		TST_RESOURCE_COPY(NULL, tst_test->resource_files[i], NULL);
 }
 
+static const char *get_tid(char *argv[])
+{
+	char *p;
+
+	if (!argv[0] || !argv[0][0]) {
+		tst_res(TINFO, "argv[0] is empty!");
+		return "ltp_empty_argv";
+	}
+
+	p = strrchr(argv[0], '/');
+	if (p)
+		return p+1;
+
+	return argv[0];
+}
+
 static struct tst_device tdev;
 struct tst_device *tst_device;
+
+static void assert_test_fn(void)
+{
+	int cnt = 0;
+
+	if (tst_test->test)
+		cnt++;
+
+	if (tst_test->test_all)
+		cnt++;
+
+	if (tst_test->sample)
+		cnt++;
+
+	if (!cnt)
+		tst_brk(TBROK, "No test function speficied");
+
+	if (cnt != 1)
+		tst_brk(TBROK, "You can define only one test function");
+
+	if (tst_test->test && !tst_test->tcnt)
+		tst_brk(TBROK, "Number of tests (tcnt) must not be > 0");
+
+	if (!tst_test->test && tst_test->tcnt)
+		tst_brk(TBROK, "You can define tcnt only for test()");
+}
+
+static int prepare_and_mount_ro_fs(const char *dev,
+                                   const char *mntpoint,
+                                   const char *fs_type)
+{
+	char buf[PATH_MAX];
+
+	if (mount(dev, mntpoint, fs_type, 0, NULL)) {
+		tst_res(TINFO | TERRNO, "Can't mount %s at %s (%s)",
+			dev, mntpoint, fs_type);
+		return 1;
+	}
+
+	mntpoint_mounted = 1;
+
+	snprintf(buf, sizeof(buf), "%s/dir/", mntpoint);
+	SAFE_MKDIR(buf, 0777);
+
+	snprintf(buf, sizeof(buf), "%s/file", mntpoint);
+	SAFE_FILE_PRINTF(buf, "file content");
+	SAFE_CHMOD(buf, 0777);
+
+	SAFE_MOUNT(dev, mntpoint, fs_type, MS_REMOUNT | MS_RDONLY, NULL);
+
+	return 0;
+}
+
+static void prepare_and_mount_dev_fs(const char *mntpoint)
+{
+	const char *flags[] = {"nodev", NULL};
+	int mounted_nodev;
+
+	mounted_nodev = tst_path_has_mnt_flags(NULL, flags);
+	if (mounted_nodev) {
+		tst_res(TINFO, "tmpdir isn't suitable for creating devices, "
+			"mounting tmpfs without nodev on %s", mntpoint);
+		SAFE_MOUNT(NULL, mntpoint, "tmpfs", 0, NULL);
+		mntpoint_mounted = 1;
+	}
+}
+
+static void prepare_device(void)
+{
+	if (tst_test->format_device) {
+		SAFE_MKFS(tdev.dev, tdev.fs_type, tst_test->dev_fs_opts,
+			  tst_test->dev_extra_opts);
+	}
+
+	if (tst_test->needs_rofs) {
+		prepare_and_mount_ro_fs(tdev.dev, tst_test->mntpoint,
+		                        tdev.fs_type);
+		return;
+	}
+
+	if (tst_test->mount_device) {
+		SAFE_MOUNT(tdev.dev, tst_test->mntpoint, tdev.fs_type,
+			   tst_test->mnt_flags, tst_test->mnt_data);
+		mntpoint_mounted = 1;
+	}
+}
 
 static void do_setup(int argc, char *argv[])
 {
 	if (!tst_test)
 		tst_brk(TBROK, "No tests to run");
 
-	if (!tst_test->tid)
-		tst_brk(TBROK, "No tid set in test structure");
+	if (tst_test->tconf_msg)
+		tst_brk(TCONF, "%s", tst_test->tconf_msg);
 
-	if (!tst_test->test && !tst_test->test_all)
-		tst_brk(TBROK, "No test function speficied");
+	assert_test_fn();
 
-	if (tst_test->test && tst_test->test_all)
-		tst_brk(TBROK, "You can define either test() or test_all()");
+	tid = get_tid(argv);
 
-	if (tst_test->test && !tst_test->tcnt)
-		tst_brk(TBROK, "Number of tests (tcnt) must not be > 0");
+	if (tst_test->sample)
+		tst_test = tst_timer_test_setup(tst_test);
 
-	if (tst_test->test_all && tst_test->tcnt)
-		tst_brk(TBROK, "You can't define tcnt for test_all()");
+	parse_opts(argc, argv);
 
 	if (tst_test->needs_root && geteuid() != 0)
 		tst_brk(TCONF, "Test needs to be run as root");
@@ -590,23 +785,85 @@ static void do_setup(int argc, char *argv[])
 	if (tst_test->min_kver)
 		check_kver();
 
-	parse_opts(argc, argv);
+	if (tst_test->needs_drivers) {
+		const char *name;
+		int i;
+
+		for (i = 0; (name = tst_test->needs_drivers[i]); ++i)
+			if (tst_check_driver(name))
+				tst_brk(TCONF, "%s driver not available", name);
+	}
+
+	if (tst_test->format_device)
+		tst_test->needs_device = 1;
+
+	if (tst_test->mount_device) {
+		tst_test->needs_device = 1;
+		tst_test->format_device = 1;
+	}
+
+	if (tst_test->all_filesystems)
+		tst_test->needs_device = 1;
 
 	setup_ipc();
 
-	if (needs_tmpdir()) {
+	if (needs_tmpdir() && !tst_tmpdir_created())
 		tst_tmpdir();
-		tmpdir_created = 1;
+
+	if (tst_test->save_restore) {
+		const char * const *name = tst_test->save_restore;
+
+		while (*name) {
+			tst_sys_conf_save(*name);
+			name++;
+		}
 	}
 
-	if (tst_test->needs_device) {
-		tdev.dev = tst_acquire_device_(NULL, tst_test->device_min_size);
-		tdev.fs_type = tst_dev_fs_type();
+	if (tst_test->mntpoint)
+		SAFE_MKDIR(tst_test->mntpoint, 0777);
+
+	if ((tst_test->needs_devfs || tst_test->needs_rofs ||
+	     tst_test->mount_device || tst_test->all_filesystems) &&
+	     !tst_test->mntpoint) {
+		tst_brk(TBROK, "tst_test->mntpoint must be set!");
+	}
+
+	if (!!tst_test->needs_rofs + !!tst_test->needs_devfs +
+	    !!tst_test->needs_device > 1) {
+		tst_brk(TBROK,
+			"Two or more of needs_{rofs, devfs, device} are set");
+	}
+
+	if (tst_test->needs_devfs)
+		prepare_and_mount_dev_fs(tst_test->mntpoint);
+
+	if (tst_test->needs_rofs) {
+		/* If we failed to mount read-only tmpfs. Fallback to
+		 * using a device with read-only filesystem.
+		 */
+		if (prepare_and_mount_ro_fs(NULL, tst_test->mntpoint, "tmpfs")) {
+			tst_res(TINFO, "Can't mount tmpfs read-only, "
+			        "falling back to block device...");
+			tst_test->needs_device = 1;
+			tst_test->format_device = 1;
+		}
+	}
+
+	if (tst_test->needs_device && !mntpoint_mounted) {
+		tdev.dev = tst_acquire_device_(NULL, tst_test->dev_min_size);
 
 		if (!tdev.dev)
 			tst_brk(TCONF, "Failed to acquire device");
 
 		tst_device = &tdev;
+
+		if (tst_test->dev_fs_type)
+			tdev.fs_type = tst_test->dev_fs_type;
+		else
+			tdev.fs_type = tst_dev_fs_type();
+
+		if (!tst_test->all_filesystems)
+			prepare_device();
 	}
 
 	if (tst_test->resource_files)
@@ -626,14 +883,20 @@ static void do_test_setup(void)
 
 static void do_cleanup(void)
 {
+	if (mntpoint_mounted)
+		tst_umount(tst_test->mntpoint);
+
 	if (tst_test->needs_device && tdev.dev)
 		tst_release_device(tdev.dev);
 
-	if (needs_tmpdir() && tmpdir_created) {
+	if (tst_tmpdir_created()) {
 		/* avoid munmap() on wrong pointer in tst_rmdir() */
 		tst_futexes = NULL;
 		tst_rmdir();
 	}
+
+	if (tst_test->save_restore)
+		tst_sys_conf_restore(0);
 
 	cleanup_ipc();
 }
@@ -675,11 +938,37 @@ static void run_tests(void)
 
 static unsigned long long get_time_ms(void)
 {
-	struct timeval tv;
+	struct timespec ts;
 
-	gettimeofday(&tv, NULL);
+	if (tst_clock_gettime(CLOCK_MONOTONIC, &ts))
+		tst_brk(TBROK | TERRNO, "tst_clock_gettime()");
 
-	return tv.tv_sec * 1000 + tv.tv_usec / 1000;
+	return tst_timespec_to_ms(ts);
+}
+
+static void add_paths(void)
+{
+	char *old_path = getenv("PATH");
+	const char *start_dir;
+	char *new_path;
+
+	start_dir = tst_get_startwd();
+
+	if (old_path)
+		SAFE_ASPRINTF(&new_path, "%s::%s", old_path, start_dir);
+	else
+		SAFE_ASPRINTF(&new_path, "::%s", start_dir);
+
+	SAFE_SETENV("PATH", new_path, 1);
+	free(new_path);
+}
+
+static void heartbeat(void)
+{
+	if (tst_clock_gettime(CLOCK_MONOTONIC, &tst_start_time))
+		tst_res(TWARN | TERRNO, "tst_clock_gettime() failed");
+
+	kill(getppid(), SIGUSR1);
 }
 
 static void testrun(void)
@@ -688,6 +977,8 @@ static void testrun(void)
 	unsigned long long stop_time = 0;
 	int cont = 1;
 
+	heartbeat();
+	add_paths();
 	do_test_setup();
 
 	if (duration > 0)
@@ -708,8 +999,7 @@ static void testrun(void)
 			break;
 
 		run_tests();
-
-		kill(getppid(), SIGUSR1);
+		heartbeat();
 	}
 
 	do_test_cleanup();
@@ -718,31 +1008,66 @@ static void testrun(void)
 
 static pid_t test_pid;
 
+
+static volatile sig_atomic_t sigkill_retries;
+
+#define WRITE_MSG(msg) do { \
+	if (write(2, msg, sizeof(msg) - 1)) { \
+		/* https://gcc.gnu.org/bugzilla/show_bug.cgi?id=66425 */ \
+	} \
+} while (0)
+
 static void alarm_handler(int sig LTP_ATTRIBUTE_UNUSED)
 {
+	WRITE_MSG("Test timeouted, sending SIGKILL!\n");
 	kill(-test_pid, SIGKILL);
+	alarm(5);
+
+	if (++sigkill_retries > 10) {
+		WRITE_MSG("Cannot kill test processes!\n");
+		WRITE_MSG("Congratulation, likely test hit a kernel bug.\n");
+		WRITE_MSG("Exitting uncleanly...\n");
+		_exit(TFAIL);
+	}
 }
 
 static void heartbeat_handler(int sig LTP_ATTRIBUTE_UNUSED)
 {
 	alarm(results->timeout);
+	sigkill_retries = 0;
 }
-
-#define SIGINT_MSG "Sending SIGKILL to test process...\n"
 
 static void sigint_handler(int sig LTP_ATTRIBUTE_UNUSED)
 {
 	if (test_pid > 0) {
-		if (write(2, SIGINT_MSG, sizeof(SIGINT_MSG) - 1)) {
-			/* https://gcc.gnu.org/bugzilla/show_bug.cgi?id=66425 */
-		}
+		WRITE_MSG("Sending SIGKILL to test process...\n");
 		kill(-test_pid, SIGKILL);
 	}
 }
 
-void tst_set_timeout(unsigned int timeout)
+unsigned int tst_timeout_remaining(void)
+{
+	static struct timespec now;
+	unsigned int elapsed;
+
+	if (tst_clock_gettime(CLOCK_MONOTONIC, &now))
+		tst_res(TWARN | TERRNO, "tst_clock_gettime() failed");
+
+	elapsed = (tst_timespec_diff_ms(now, tst_start_time) + 500) / 1000;
+	if (results->timeout > elapsed)
+		return results->timeout - elapsed;
+
+	return 0;
+}
+
+void tst_set_timeout(int timeout)
 {
 	char *mul = getenv("LTP_TIMEOUT_MUL");
+
+	if (timeout == -1) {
+		tst_res(TINFO, "Timeout per run is disabled");
+		return;
+	}
 
 	results->timeout = timeout;
 
@@ -762,21 +1087,12 @@ void tst_set_timeout(unsigned int timeout)
 	if (getpid() == lib_pid)
 		alarm(results->timeout);
 	else
-		kill(getppid(), SIGUSR1);
+		heartbeat();
 }
 
-void tst_run_tcases(int argc, char *argv[], struct tst_test *self)
+static int fork_testrun(void)
 {
 	int status;
-
-	lib_pid = getpid();
-	tst_test = self;
-	TCID = tst_test->tid;
-
-	do_setup(argc, argv);
-
-	SAFE_SIGNAL(SIGALRM, alarm_handler);
-	SAFE_SIGNAL(SIGUSR1, heartbeat_handler);
 
 	if (tst_test->timeout)
 		tst_set_timeout(tst_test->timeout);
@@ -802,7 +1118,7 @@ void tst_run_tcases(int argc, char *argv[], struct tst_test *self)
 	SAFE_SIGNAL(SIGINT, SIG_DFL);
 
 	if (WIFEXITED(status) && WEXITSTATUS(status))
-		do_exit(WEXITSTATUS(status));
+		return WEXITSTATUS(status);
 
 	if (WIFSIGNALED(status) && WTERMSIG(status) == SIGKILL) {
 		tst_res(TINFO, "If you are running on slow machine, "
@@ -813,5 +1129,79 @@ void tst_run_tcases(int argc, char *argv[], struct tst_test *self)
 	if (WIFSIGNALED(status))
 		tst_brk(TBROK, "Test killed by %s!", tst_strsig(WTERMSIG(status)));
 
-	do_exit(0);
+	return 0;
+}
+
+static int run_tcases_per_fs(void)
+{
+	int ret = 0;
+	unsigned int i;
+	const char *const *filesystems = tst_get_supported_fs_types();
+
+	if (!filesystems[0])
+		tst_brk(TCONF, "There are no supported filesystems");
+
+	for (i = 0; filesystems[i]; i++) {
+
+		tst_res(TINFO, "Testing on %s", filesystems[i]);
+		tdev.fs_type = filesystems[i];
+
+		prepare_device();
+
+		ret = fork_testrun();
+
+		if (mntpoint_mounted) {
+			tst_umount(tst_test->mntpoint);
+			mntpoint_mounted = 0;
+		}
+
+		if (ret == TCONF) {
+			update_results(ret);
+			continue;
+		}
+
+		if (ret == 0)
+			continue;
+
+		do_exit(ret);
+	}
+
+	return ret;
+}
+
+void tst_run_tcases(int argc, char *argv[], struct tst_test *self)
+{
+	int ret;
+
+	lib_pid = getpid();
+	tst_test = self;
+
+	do_setup(argc, argv);
+
+	TCID = tid;
+
+	SAFE_SIGNAL(SIGALRM, alarm_handler);
+	SAFE_SIGNAL(SIGUSR1, heartbeat_handler);
+
+	if (tst_test->all_filesystems)
+		ret = run_tcases_per_fs();
+	else
+		ret = fork_testrun();
+
+	do_exit(ret);
+}
+
+
+void tst_flush(void)
+{
+	int rval;
+
+	rval = fflush(stderr);
+	if (rval != 0)
+		tst_brk(TBROK | TERRNO, "fflush(stderr) failed");
+
+	rval = fflush(stderr);
+	if (rval != 0)
+		tst_brk(TBROK | TERRNO, "fflush(stdout) failed");
+
 }

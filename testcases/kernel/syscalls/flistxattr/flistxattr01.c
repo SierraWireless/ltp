@@ -62,7 +62,7 @@ static void verify_flistxattr(void)
 	char buf[64];
 
 	TEST(flistxattr(fd, buf, sizeof(buf)));
-	if (TEST_RETURN == -1) {
+	if (TST_RET == -1) {
 		tst_res(TFAIL | TTERRNO, "flistxattr() failed");
 		return;
 	}
@@ -85,12 +85,11 @@ static void setup(void)
 
 static void cleanup(void)
 {
-	if (fd > 0 && close(fd))
-		tst_res(TWARN | TERRNO, "failed to close file");
+	if (fd > 0)
+		SAFE_CLOSE(fd);
 }
 
 static struct tst_test test = {
-	.tid = "flistxattr01",
 	.needs_tmpdir = 1,
 	.needs_root = 1,
 	.test_all = verify_flistxattr,

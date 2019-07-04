@@ -15,44 +15,30 @@ dnl You should have received a copy of the GNU General Public License
 dnl along with this program;  if not, write to the Free Software
 dnl Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 dnl
-dnl Author: Garrett Cooper <yanegomi@gmail.com>
+dnl Author: Ngie Cooper <yaneurabeya@gmail.com>
+dnl Copyright (c) 2017 Petr Vorel <pvorel@suse.cz>
 dnl
 
 dnl
 dnl LTP_CHECK_SYSCALL_NUMA
 dnl ----------------------------
 dnl
-AC_DEFUN([LTP_CHECK_SYSCALL_NUMA],
-[dnl
-AC_MSG_CHECKING([for numa])
-AC_ARG_WITH(
-	[numa],
-	AC_HELP_STRING([--without-numa],
-	[without numa support]),
-	[],
-	[AC_CHECK_HEADERS([linux/mempolicy.h numa.h numaif.h],[
-	LTP_SYSCALL_NUMA_HEADERS=yes
-	AC_CHECK_LIB(numa,numa_alloc_onnode,[have_numa_alloc_onnode="yes"])
-	if  test "x$have_numa_alloc_onnode" = "xyes"; then
-		AC_DEFINE(HAVE_NUMA_ALLOC_ONNODE,1,[define to 1 if you have 'numa_alloc_onnode' function])
+AC_DEFUN([LTP_CHECK_SYSCALL_NUMA], [
+	AC_CHECK_LIB(numa, numa_available, [have_libnuma=yes])
+	AC_CHECK_HEADERS([numa.h numaif.h], [], [have_numa_headers=no])
+
+	if test "x$have_numa_headers" != "xno"; then
+		AC_COMPILE_IFELSE([AC_LANG_PROGRAM([
+#include <numa.h>
+		], [
+#if LIBNUMA_API_VERSION < 2
+# error Required numa headers >= 2
+#endif
+		])], [have_numa_headers_v2=yes])
 	fi
-	AC_CHECK_LIB(numa,numa_move_pages,[have_numa_move_pages="yes"])
-	if  test "x$have_numa_move_pages" = "xyes"; then
-		AC_DEFINE(HAVE_NUMA_MOVE_PAGES,1,[define to 1 if you have 'numa_move_pages' function])
+
+	if test "x$have_libnuma" = "xyes" -a "x$have_numa_headers" != "xno" -a "x$have_numa_headers_v2" = "xyes"; then
+		AC_SUBST(NUMA_LIBS, "-lnuma")
+		AC_DEFINE(HAVE_NUMA_V2, 1, [Define to 1 if you have libnuma and it's headers version >= 2 installed.])
 	fi
-]
-	AC_CHECK_LIB(numa,numa_available,[
-NUMA_CPPFLAGS="-DNUMA_VERSION1_COMPATIBILITY"
-NUMA_LIBS="-lnuma"
-	])
-dnl For testcases/kernel/controllers/cpuset, testcases/kernel/syscalls/get_mempolicy,
-dnl testcases/kernel/syscalls/mbind
-AC_CHECK_DECLS([MPOL_BIND, MPOL_DEFAULT, MPOL_F_ADDR, MPOL_F_MEMS_ALLOWED, MPOL_F_NODE, MPOL_INTERLEAVE, MPOL_PREFERRED],[have_mpol_constants="yes"],,[#include <numaif.h>])
-AC_SUBST(NUMA_CPPFLAGS)
-AC_SUBST(NUMA_LIBS)
-if test "x$have_mpol_constants" = "xyes"; then
-	AC_DEFINE(HAVE_MPOL_CONSTANTS,1,[define to 1 if you have all constants required to use mbind tests])
-fi
-)])
-AC_MSG_RESULT([$with_numa])
 ])

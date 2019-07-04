@@ -22,26 +22,31 @@
  * with this program; if not, write the Free Software Foundation, Inc.,
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  *
- * Garrett Cooper, April 2012
+ * Ngie Cooper, April 2012
  */
 
 #ifndef	_INOTIFY_H
 #define	_INOTIFY_H
 
+#include "lapi/syscalls.h"
+
 /* inotify(7) wrappers */
 
 #if __NR_inotify_init != __LTP__NR_INVALID_SYSCALL
 #define	myinotify_init() \
-	syscall(__NR_inotify_init)
+	tst_syscall(__NR_inotify_init)
 #else
 #define	myinotify_init() \
-	syscall(__NR_inotify_init1, 0)
+	tst_syscall(__NR_inotify_init1, 0)
 #endif
 
+#define myinotify_init1(flags) \
+	tst_syscall(__NR_inotify_init1, flags)
+
 #define	myinotify_add_watch(fd, pathname, mask)	\
-	syscall(__NR_inotify_add_watch, fd, pathname, mask)
+	tst_syscall(__NR_inotify_add_watch, fd, pathname, mask)
 
 #define	myinotify_rm_watch(fd, wd) \
-	syscall(__NR_inotify_rm_watch, fd, wd)
+	tst_syscall(__NR_inotify_rm_watch, fd, wd)
 
 #endif /* _INOTIFY_H */

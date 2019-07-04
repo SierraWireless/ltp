@@ -41,6 +41,7 @@
 #include <errno.h>
 #include <unistd.h>
 #include "test.h"
+#include "safe_macros.h"
 
 char *TCID = "mremap05";
 
@@ -52,7 +53,7 @@ struct test_case_t {
 	size_t old_size;	/* in pages */
 	size_t new_size;	/* in pages */
 	int flags;
-	const const char *msg;
+	const char *msg;
 	void *exp_ret;
 	int exp_errno;
 	char *ret;
@@ -119,8 +120,7 @@ static int TST_TOTAL = sizeof(tdat) / sizeof(tdat[0]);
 
 static void free_test_area(void *p, int size)
 {
-	if (munmap(p, size) < 0)
-		tst_brkm(TBROK | TERRNO, cleanup, "free_test_area munmap");
+	SAFE_MUNMAP(cleanup, p, size);
 }
 
 static void *get_test_area(int size, int free_area)

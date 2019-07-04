@@ -58,7 +58,7 @@ static void verify_pipe(void)
 #endif
 
 	TEST(pipe(fd));
-	if (TEST_RETURN == -1) {
+	if (TST_RET == -1) {
 		tst_res(TFAIL|TERRNO, "pipe() failed");
 		return;
 	}
@@ -101,7 +101,6 @@ static void verify_pipe(void)
 }
 
 static struct tst_test test = {
-	.tid = "pipe02",
 	.forks_child = 1,
 	.needs_checkpoints = 1,
 	.test_all = verify_pipe,

@@ -73,7 +73,7 @@ int main(int argc, char **argv)
 
 	setup();
 
-#if HAVE_NUMA_MOVE_PAGES
+#ifdef HAVE_NUMA_V2
 	unsigned int i;
 	int lc;
 	unsigned int from_node;
@@ -109,7 +109,7 @@ int main(int argc, char **argv)
 		 *     mm: stop returning -ENOENT from sys_move_pages() if nothing got migrated
 		 */
 		if ((tst_kvercmp(2, 6, 28)) >= 0) {
-			if (ret == 0)
+			if (ret >= 0)
 				tst_resm(TPASS, "move_pages succeeded");
 			else
 				tst_resm(TFAIL | TERRNO, "move_pages");
@@ -125,7 +125,7 @@ int main(int argc, char **argv)
 		free_pages(pages, TEST_PAGES);
 	}
 #else
-	tst_resm(TCONF, "move_pages support not found.");
+	tst_resm(TCONF, NUMA_ERROR_MSG);
 #endif
 
 	cleanup();

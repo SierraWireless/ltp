@@ -17,7 +17,7 @@
 #    with this program; if not, write to the Free Software Foundation, Inc.,
 #    51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 #
-# Garrett Cooper, July 2009
+# Ngie Cooper, July 2009
 #
 
 top_srcdir		?= ../../../../..
@@ -49,3 +49,4 @@ MAKE_TARGETS		:= rpc1 rpc_server
 MAKE_DEPS		:= $(LIB)
 
 include $(top_srcdir)/include/mk/generic_trunk_target.mk
+include $(top_srcdir)/testcases/network/rpc/rpc-tirpc/tests_pack/Makefile.inc

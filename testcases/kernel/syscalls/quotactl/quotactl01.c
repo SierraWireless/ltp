@@ -78,7 +78,6 @@
 
 # define MNTPOINT	"mntpoint"
 
-static int mount_flag;
 static int32_t fmt_id = FMTID;
 static int test_id;
 static struct dqblk set_dq = {
@@ -163,12 +162,6 @@ static void setup(void)
 	const char *const cmd[] = {"quotacheck", "-ug", MNTPOINT, NULL};
 	int ret;
 
-	SAFE_MKDIR(MNTPOINT, 0755);
-
-	SAFE_MKFS(tst_device->dev, "ext4", NULL, NULL);
-
-	SAFE_MOUNT(tst_device->dev, MNTPOINT, "ext4", 0, "usrquota,grpquota");
-	mount_flag = 1;
 
 	ret = tst_run_cmd(cmd, NULL, NULL, 1);
 	switch (ret) {
@@ -189,12 +182,6 @@ static void setup(void)
 		tst_brk(TFAIL | TERRNO, "group quotafile didn't exist");
 }
 
-static void cleanup(void)
-{
-	if (mount_flag && tst_umount(MNTPOINT) < 0)
-		tst_res(TWARN | TERRNO, "umount(2) failed");
-}
-
 static void verify_quota(unsigned int n)
 {
 	struct tcase *tc = &tcases[n];
@@ -204,7 +191,7 @@ static void verify_quota(unsigned int n)
 	fmt_buf = 0;
 
 	TEST(quotactl(tc->cmd, tst_device->dev, *tc->id, tc->addr));
-	if (TEST_RETURN == -1) {
+	if (TST_RET == -1) {
 		tst_res(TFAIL | TTERRNO, "quotactl failed to %s", tc->des);
 		return;
 	}
@@ -220,14 +207,15 @@ static void verify_quota(unsigned int n)
 }
 
 static struct tst_test test = {
-	.tid = "quotactl01",
 	.needs_tmpdir = 1,
 	.needs_root = 1,
 	.test = verify_quota,
 	.tcnt = ARRAY_SIZE(tcases),
-	.needs_device = 1,
+	.mount_device = 1,
+	.dev_fs_type = "ext4",
+	.mntpoint = MNTPOINT,
+	.mnt_data = "usrquota,grpquota",
 	.setup = setup,
-	.cleanup = cleanup
 };
 
 #else

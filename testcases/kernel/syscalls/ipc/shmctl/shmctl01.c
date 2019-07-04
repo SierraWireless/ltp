@@ -47,6 +47,7 @@
 #define _GNU_SOURCE
 #endif
 #include "ipcshm.h"
+#include "safe_macros.h"
 
 char *TCID = "shmctl01";
 
@@ -227,7 +228,7 @@ void stat_setup(void)
 		 */
 		set_shared = set_shmat();
 
-	tst_flush();
+	tst_old_flush();
 	for (stat_i = 0; stat_i < N_ATTACH; stat_i++) {
 		pid = FORK_OR_VFORK();
 		if (pid == -1)
@@ -337,8 +338,7 @@ void stat_cleanup(void)
 
 	/* wake up the childern so they can detach the memory and exit */
 	for (i = 0; i < N_ATTACH; i++) {
-		if (kill(pid_arr[i], SIGUSR1) == -1)
-			tst_brkm(TBROK, cleanup, "kill failed");
+		SAFE_KILL(cleanup, pid_arr[i], SIGUSR1);
 	}
 
 	/* remove the parent's shared memory the second time through */
@@ -348,8 +348,7 @@ void stat_cleanup(void)
 	}
 
 	for (i = 0; i < N_ATTACH; i++) {
-		if (waitpid(pid_arr[i], NULL, 0) == -1)
-			tst_brkm(TBROK, cleanup, "waitpid failed");
+		SAFE_WAITPID(cleanup, pid_arr[i], NULL, 0);
 	}
 
 	stat_time++;

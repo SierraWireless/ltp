@@ -29,8 +29,8 @@
  */
 
 #include "config.h"
-#if HAVE_NUMA_H && HAVE_NUMAIF_H && HAVE_LINUX_MEMPOLICY_H
-#include <linux/mempolicy.h>
+
+#ifdef HAVE_NUMA_V2
 #include <sys/types.h>
 #include <sys/time.h>
 #include <sys/mman.h>
@@ -59,7 +59,6 @@
 #define MPOL_MF_WAIT    (1<<2)	/* Wait for existing pages to migrate */
 #endif
 
-#if defined(LIBNUMA_API_VERSION) && LIBNUMA_API_VERSION == 2
 static inline int nodemask_isset(nodemask_t * mask, int node)
 {
 	if ((unsigned)node >= NUMA_NUM_NODES)
@@ -75,7 +74,6 @@ static inline void nodemask_set(nodemask_t * mask, int node)
 	mask->n[node / (8 * sizeof(unsigned long))] |=
 	    (1UL << (node % (8 * sizeof(unsigned long))));
 }
-#endif
 
 static char *whitespace = " \t";
 
@@ -385,11 +383,7 @@ static int get_arg_nodeid_list(char *args, unsigned int *list)
 	int node, count = 0;
 
 	gcp = &glctx;
-#if defined(LIBNUMA_API_VERSION) && LIBNUMA_API_VERSION == 2
 	my_allowed_nodes = numa_get_membind_compat();
-#else
-	my_allowed_nodes = numa_get_membind();
-#endif
 	while (*args != '\0') {
 		if (!isdigit(*args)) {
 			fprintf(stderr, "%s:  expected digit for <node/list>\n",
@@ -438,7 +432,7 @@ static int get_arg_nodeid_list(char *args, unsigned int *list)
 static int get_current_nodeid_list(unsigned int *fromids)
 {
 	/*
-	 * FIXME (garrcoop): gcp is unitialized and shortly hereafter used in
+	 * FIXME (garrcoop): gcp is uninitialized and shortly hereafter used in
 	 * an initialization statement..... UHHHHHHH... test writer fail?
 	 */
 	glctx_t *gcp;
@@ -447,11 +441,7 @@ static int get_current_nodeid_list(unsigned int *fromids)
 	int node;
 
 	gcp = &glctx;
-#if defined(LIBNUMA_API_VERSION) && LIBNUMA_API_VERSION == 2
 	my_allowed_nodes = numa_get_membind_compat();
-#else
-	my_allowed_nodes = numa_get_membind();
-#endif
 	for (node = 0; node <= max_node; ++node) {
 		if (nodemask_isset(&my_allowed_nodes, node))
 			*(fromids + nr_nodes++) = node;

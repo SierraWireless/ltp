@@ -1,184 +1,113 @@
 /*
+ * Copyright (c) 2017 Richard Palethorpe <rpalethorpe@suse.com>
+ * Copyright (c) 2017 Fujitsu Ltd. (Xiao Yang <yangx.jy@cn.fujitsu.com>)
  *
- *   Copyright (c) International Business Machines  Corp., 2001
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 2 of the License, or
+ * (at your option) any later version.
  *
- *   This program is free software;  you can redistribute it and/or modify
- *   it under the terms of the GNU General Public License as published by
- *   the Free Software Foundation; either version 2 of the License, or
- *   (at your option) any later version.
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  *
- *   This program is distributed in the hope that it will be useful,
- *   but WITHOUT ANY WARRANTY;  without even the implied warranty of
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See
- *   the GNU General Public License for more details.
- *
- *   You should have received a copy of the GNU General Public License
- *   along with this program;  if not, write to the Free Software
- *   Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
-
 /*
- * NAME
- *	shmat03.c
+ * Test for CVE-2017-5669 which allows us to map the nil page using shmat.
  *
- * DESCRIPTION
- *	shmat03 - test for EACCES error
+ * When the bug is present shmat(..., (void *)1, SHM_RND) will round address
+ * 0x1 down to zero and give us the (nil/null) page. With the current bug fix
+ * in place, shmat it will return EINVAL instead. We also check to see if the
+ * returned address is outside the nil page in case an alternative fix has
+ * been applied.
  *
- * ALGORITHM
- *	create a shared memory segment with root only read & write permissions
- *	fork a child process
- *	if child
- *	  set the ID of the child process to that of "nobody"
- *	  loop if that option was specified
- *	    call shmat() using the TEST() macro
- *	    check the errno value
- *	      issue a PASS message if we get EACCES
- *	    otherwise, the tests fails
- *	      issue a FAIL message
- *	  call cleanup
- *	if parent
- *	  wait for child to exit
- *	  remove the shared memory segment
+ * In any case we manage to map some memory we also try to write to it. This
+ * is just to see if we get an access error or some other unexpected behaviour.
  *
- * USAGE:  <for command-line>
- *  shmat03 [-c n] [-e] [-i n] [-I x] [-P x] [-t]
- *     where,  -c n : Run n copies concurrently.
- *             -e   : Turn on errno logging.
- *	       -i n : Execute test n times.
- *	       -I x : Execute test for x seconds.
- *	       -P x : Pause for x seconds between iterations.
- *	       -t   : Turn on syscall timing.
+ * See commit 95e91b831f (ipc/shm: Fix shmat mmap nil-page protection)
  *
- * HISTORY
- *	03/2001 - Written by Wayne Boyer
+ * The commit above disallowed SHM_RND maps to zero (and rounded) entirely and
+ * that broke userland for cases like Xorg. New behavior disallows REMAPs to
+ * lower addresses (0<=PAGESIZE).
  *
- * RESTRICTIONS
- *	test must be run at root
+ * See commit a73ab244f0da (Revert "ipc/shm: Fix shmat mmap nil-page protect...)
+ * See commit 8f89c007b6de (ipc/shm: fix shmat() nil address after round-dow...)
+ * See https://github.com/linux-test-project/ltp/issues/319
+ *
+ * This test needs root permissions or else security_mmap_addr(), from
+ * get_unmapped_area(), will cause permission errors when trying to mmap lower
+ * addresses.
  */
 
-#include "ipcshm.h"
+#include <sys/types.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
 
-char *TCID = "shmat03";
-int TST_TOTAL = 1;
+#include <stdio.h>
+#include <errno.h>
+#include <string.h>
 
-int shm_id_1 = -1;
+#include "tst_test.h"
+#include "tst_safe_sysv_ipc.h"
 
-void *addr;			/* for result of shmat-call */
+static int shm_id;
+static void *shm_addr;
 
-uid_t ltp_uid;
-char *ltp_user = "nobody";
-
-static void do_child(void);
-
-int main(int ac, char **av)
+static void setup(void)
 {
-	int pid;
-
-	tst_parse_opts(ac, av, NULL, NULL);
-
-	setup();		/* global setup */
-
-	pid = FORK_OR_VFORK();
-	if (pid == -1)
-		tst_brkm(TBROK, cleanup, "could not fork");
-
-	if (pid == 0) {		/* child */
-		/* set the user ID of the child to the non root user */
-		if (setuid(ltp_uid) == -1) {
-			perror("setuid() failed");
-			exit(1);
-		}
-
-		do_child();
-
-	} else {		/* parent */
-		/* wait for the child to return */
-		if (waitpid(pid, NULL, 0) == -1)
-			tst_brkm(TBROK, cleanup, "waitpid failed");
-
-		/* if it exists, remove the shared memory resource */
-		rm_shm(shm_id_1);
-
-		tst_rmdir();
-	}
-
-	cleanup();
-	tst_exit();
+	shm_id = SAFE_SHMGET(IPC_PRIVATE, getpagesize(), 0777);
 }
 
-/*
- * do_child - make the TEST call as the child process
- */
-static void do_child(void)
+static void cleanup(void)
 {
-	int lc;
+	if (shm_addr)
+		SAFE_SHMDT(shm_addr);
 
-	/* The following loop checks looping state if -i option given */
-
-	for (lc = 0; TEST_LOOPING(lc); lc++) {
-		/* reset tst_count in case we are looping */
-		tst_count = 0;
-
-		/*
-		 * use TEST macro to make the call
-		 */
-		errno = 0;
-		addr = shmat(shm_id_1, NULL, 0);
-		TEST_ERRNO = errno;
-
-		if (addr != (char *)-1) {
-			tst_resm(TFAIL, "call succeeded unexpectedly");
-			continue;
-		}
-
-		switch (TEST_ERRNO) {
-		case EACCES:
-			tst_resm(TPASS | TTERRNO, "expected failure");
-			break;
-		default:
-			tst_resm(TFAIL | TTERRNO,
-				 "call failed with an unexpected error");
-			break;
-		}
-	}
+	if (shm_id)
+		SAFE_SHMCTL(shm_id, IPC_RMID, 0);
 }
 
-/*
- * setup() - performs all the ONE TIME setup for this test.
- */
-void setup(void)
+static void run(void)
 {
-	tst_require_root();
-
-	tst_sig(FORK, DEF_HANDLER, cleanup);
-
-	TEST_PAUSE;
-
+	tst_res(TINFO, "Attempting to attach shared memory to null page");
 	/*
-	 * Create a temporary directory and cd into it.
-	 * This helps to ensure that a unique msgkey is created.
-	 * See ../lib/libipc.c for more information.
+	 * shmat() for 0 (or < PAGESIZE with RND flag) has to fail with REMAPs
+	 * https://github.com/linux-test-project/ltp/issues/319
 	 */
-	tst_tmpdir();
+	shm_addr = shmat(shm_id, ((void *)1), SHM_RND | SHM_REMAP);
+	if (shm_addr == (void *)-1) {
+		shm_addr = NULL;
+		if (errno == EINVAL) {
+			tst_res(TPASS, "shmat returned EINVAL");
+			return;
+		}
+		tst_brk(TBROK | TERRNO,
+			"The bug was not triggered, but the shmat error is unexpected");
+	}
 
-	/* get an IPC resource key */
-	shmkey = getipckey();
+	tst_res(TINFO, "Mapped shared memory to %p", shm_addr);
 
-	/* create a shared memory segment with read and write permissions */
-	shm_id_1 = shmget(shmkey, SHM_SIZE, SHM_RW | IPC_CREAT | IPC_EXCL);
-	if (shm_id_1 == -1)
-		tst_brkm(TBROK, cleanup, "Failed to create shared memory "
-			 "segment in setup");
+	if (!((size_t)shm_addr & (~0U << 16)))
+		tst_res(TFAIL,
+			"We have mapped a VM address within the first 64Kb");
+	else
+		tst_res(TPASS,
+			"The kernel assigned a different VM address");
 
-	/* get the userid for a non root user */
-	ltp_uid = getuserid(ltp_user);
+	tst_res(TINFO,
+		"Touching shared memory to see if anything strange happens");
+	((char *)shm_addr)[0] = 'P';
+
+	SAFE_SHMDT(shm_addr);
+	shm_addr = NULL;
 }
 
-/*
- * cleanup() - performs all the ONE TIME cleanup for this test at completion
- *		or premature exit.
- */
-void cleanup(void)
-{
-
-}
+static struct tst_test test = {
+	.needs_root = 1,
+	.setup = setup,
+	.cleanup = cleanup,
+	.test_all = run,
+};

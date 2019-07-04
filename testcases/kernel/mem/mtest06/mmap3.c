@@ -34,6 +34,7 @@
 #include <stdlib.h>
 #include <limits.h>
 #include <pthread.h>
+#include "tst_safe_pthread.h"
 #include "tst_test.h"
 
 static char *str_loops;
@@ -204,7 +205,6 @@ static struct tst_option options[] = {
 };
 
 static struct tst_test test = {
-	.tid = "mmap3",
 	.options = options,
 	.needs_tmpdir = 1,
 	.setup = setup,
