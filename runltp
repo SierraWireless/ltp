@@ -78,6 +78,7 @@ setup()
     }
     export LTPROOT=${PWD}
     export TMPBASE="/tmp"
+    export TMP_DD="${LTPROOT}/tmp"
     export PATH="${PATH}:${LTPROOT}/testcases/bin:${LTPROOT}/bin"
 
     export LTP_DEV_FS_TYPE="ext2"
@@ -536,7 +537,7 @@ main()
 
     # Added -m 777 for tests that call tst_tmpdir() and try to
     #  write to it as user nobody
-    mkdir -m 777 -p $TMPBASE || \
+    mkdir -m 777 -p $TMPBASE $TMP_DD || \
     {
         echo "FATAL: Unable to make temporary directory $TMPBASE"
         exit 1
@@ -553,9 +554,9 @@ main()
     # write to it as user nobody
     export TMPDIR=$TMP
 
-    chmod 777 $TMP || \
+    chmod 1777 $TMP || \
     {
-      echo "unable to chmod 777 $TMP ... aborting"
+      echo "unable to chmod 1777 $TMP ... aborting"
       exit 1
     }
 
@@ -939,7 +940,7 @@ EOF
 create_block()
 {
     #create a block device
-    dd if=/dev/zero of=${TMP}/test.img bs=1024 count=262144 >/dev/null 2>&1
+    dd if=/dev/zero of=${TMP_DD}/test.img bs=1024 count=262144 >/dev/null 2>&1
     if [ $? -ne 0 ]; then
         echo "Failed to create loopback device image, please check disk space and re-run"
         return 1
@@ -951,7 +952,7 @@ create_block()
             return 1
         else
             ##attach the created file to loop dev.
-            losetup $LOOP_DEV ${TMP}/test.img
+            losetup $LOOP_DEV ${TMP_DD}/test.img
             if [ $? -ne 0 ]; then
                 echo "losetup failed to create block device"
                 return 1
@@ -982,7 +983,7 @@ set_block_device()
 cleanup()
 {
     [ "$LOOP_DEV" ] && losetup -d $LOOP_DEV
-    rm -rf ${TMP}
+    rm -rf ${TMP} ${TMP_DD}
 }
 
 
