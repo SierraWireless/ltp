@@ -20,7 +20,7 @@
 # Anson Ouyang February 2019
 #
 
-top_srcdir		?= ../..
+top_srcdir		?= ../../../..
 
 include $(top_srcdir)/include/mk/env_pre.mk
 
@@ -30,6 +30,4 @@ INSTALL_TARGETS		:= *.sh
 
 MAKE_TARGETS		:=
 
-SUBDIRS             := service
-
-include $(top_srcdir)/include/mk/generic_trunk_target.mk
+include $(top_srcdir)/include/mk/generic_leaf_target.mk
