@@ -1,3 +1,6 @@
+#DESCRIPTION:Sierra Dm verity test
+dm_verity dm_verity.sh
+
 #DESCRIPTION:Math library tests - CPU tests
 abs01 abs01
 
