@@ -1,3 +1,6 @@
+#DESCRIPTION:Sierra Dm verity test
+dm_verity dm_verity.sh
+
 #DESCRIPTION:Kernel system calls
 service_status service_status.sh
 abort01 abort01

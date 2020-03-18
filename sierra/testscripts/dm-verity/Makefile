@@ -17,10 +17,10 @@
 #    with this program; if not, write to the Free Software Foundation, Inc.,
 #    51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 #
-# Anson Ouyang February 2019
+# Betty Zhuo March 2020
 #
 
-top_srcdir		?= ../..
+top_srcdir		?= ../../..
 
 include $(top_srcdir)/include/mk/env_pre.mk
 
@@ -30,8 +30,4 @@ INSTALL_TARGETS		:= *.sh
 
 MAKE_TARGETS		:=
 
-SUBDIRS             := service
-
-SUBDIRS             += dm-verity
-
-include $(top_srcdir)/include/mk/generic_trunk_target.mk
+include $(top_srcdir)/include/mk/generic_leaf_target.mk
