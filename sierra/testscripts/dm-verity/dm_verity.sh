@@ -55,7 +55,7 @@ do_verify_dm_verity_image()
 	local ubi_dev_num=$1
 
 	if [ -z "$ubi_dev_num" ]; then
-		echo "Err, UBI device number not correct."
+		echo "ERR, UBI device number not correct."
 		exit_script
 	fi
 
@@ -93,10 +93,10 @@ get_test_partition_num()
 
 	echo "mtd_part_name is $mtd_part_name"
 	if [ -n "$mtd_part_name" ]; then
-		ubi_dev_num=$(cat /proc/mtd | grep $mtd_part_name | cut -d : -f 1 | cut -c 4-)
-		echo "ubi_dev_num is $ubi_dev_num"
+		UBI_DEV_NUM=$(cat /proc/mtd | grep $mtd_part_name | cut -d : -f 1 | cut -c 4-)
+		echo "UBI_DEV_NUM is $UBI_DEV_NUM"
 	else
-		echo "get_test_partition_num FAIL."
+		echo "ERR, No test partition found."
 		exit_script
 	fi
 }
